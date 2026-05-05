@@ -1,0 +1,63 @@
+# portal/internal/api
+
+> **Maintenance:** see the `lingtai-tui-anatomy` skill. **Coding agents** update this file in the same commit as code changes.
+
+HTTP server for `lingtai-portal`: serves the embedded React SPA on `/` and a JSON REST API on `/api/*`. Manages a live topology tape (3-second snapshots appended as JSONL), compressed hourly replay caches, and on-the-fly reconstruction from source events.
+
+## Components
+
+### Server (`server.go`)
+
+- **`server.go:18-24`** — `Server` struct. Wraps `http.Server` with `port`, `baseDir`, `cancel`/`done` for the recording goroutine.
+- **`server.go:26-41`** — `NewServer(baseDir, staticFS)`. Registers 6 API routes (`server.go:28-33`) and mounts `staticFS` at `/` (`server.go:35`). Routes fixed before the Server is returned.
+- **`server.go:43-58`** — `Start(portFile, fixedPort)`. Listens on `0.0.0.0:0` (random port) unless `fixedPort > 0` (`server.go:44-48`). Writes bound port to `portFile` (`server.go:53-54`). Serves in a goroutine (`server.go:56`).
+- **`server.go:62-159`** — `StartRecording(baseDir)`. Background goroutine with a 3-second ticker (`server.go:70`). On first run: checks `needsReconstruction`, rebuilds tape from source via `agentfs.ReconstructTape` if needed, streams frames into hourly compressed chunks (`server.go:73-139`). Then records `agentfs.BuildNetwork` snapshots on every tick via `AppendTopology` (`server.go:152-157`).
+- **`server.go:170-176`** — `Stop(ctx)`. Cancels the recording goroutine, waits for `s.done`, shuts down the HTTP server.
+- **`server.go:180-203`** — `needsReconstruction(path)`. Returns true if `topology.jsonl` is missing, empty, or uses the old format (lacking `direct`/`cc`/`bcc` fields on mail edges).
+
+### Handlers (`handlers.go`)
+
+- **`handlers.go:16`** — `TopologyMu sync.Mutex`. Global mutex guarding `topology.jsonl` writes and reads.
+- **`handlers.go:18-42`** — `NewNetworkHandler(baseDir)`. `GET /api/network` — live snapshot of the agent network via `fs.BuildNetwork`. Always returns `[]` not `null` for empty slices. Sets `Lang` on the response.
+- **`handlers.go:44-72`** — `NewTopologyHandler(baseDir)`. `GET /api/topology` — reads `topology.jsonl`, parses it into a JSON array of raw messages.
+- **`handlers.go:93-136`** — `AppendTopology(path, network)` / `AppendTopologyAt`. Writes one JSONL line `{"t":<unix_ms>,"net":<network>}`. Normalises nil slices to `[]`. Opens the file with `O_APPEND`; creates parent dirs on first write.
+- **`handlers.go:140-159`** — `NewProgressHandler(baseDir)`. `GET /api/topology/progress` — reads `reconstruct.progress` (`"N/M"` format), returns `{"current":N,"total":M}` or `{}`.
+
+### Replay (`replay.go`, 655 lines)
+
+- **`replay.go:18-56`** — Wire types: `ReplayChunk` (delta-encoded hour range), `ReplayFrame` (keyframe or delta), `FrameDelta` (only-changed fields), `ChunkInfo` (manifest entry), `ReplayManifest` (tape bounds + chunk list).
+- **`replay.go:60-87`** — `deltaEncode(frames, keyframeInterval)`. Converts `[]TapeFrame` into a `ReplayChunk` with full keyframes every N frames and `FrameDelta` in between.
+- **`replay.go:91-178`** — `computeDelta(prev, curr)`. Field-by-field diff of two `Network` values: nodes (with `__REMOVED__` tombstones), avatar/contact/mail edges (keyed by identifier pairs), and stats. Returns nil if nothing changed.
+- **`replay.go:220-320`** — `buildManifest(topologyPath, replayDir)`. Fast path: reads cached `manifest.json`, scans only new JSONL frames after the last completed chunk, caches newly-completed hours as `.json.gz`. O(new_frames).
+- **`replay.go:355-423`** — `fullCompile(topologyPath, replayDir)`. Slow path: full re-scan of `topology.jsonl`, rebuilds all hourly caches. O(all_frames).
+- **`replay.go:425-458`** — `writeChunkCache` / `readChunkCache`. Gzip-compressed JSON encode/decode of `ReplayChunk` to/from `<hourMs>.json.gz`.
+- **`replay.go:460-500`** — `loadChunk(replayDir, topologyPath, hourStart)`. Tries cached `.json.gz` first; falls back to scanning JSONL for that hour's frames if cache missing.
+- **`replay.go:504-527`** — `NewManifestHandler`. `GET /api/topology/manifest` — calls `buildManifest`, returns chunk index.
+- **`replay.go:532-614`** — `NewRebuildHandler`. `POST /api/topology/rebuild` — reconstructs the full tape from `fs.ReconstructTape`, replaces `topology.jsonl` with the last frame, rebuilds all hourly caches.
+- **`replay.go:617-655`** — `NewChunkHandler`. `GET /api/topology/chunk?start=<hourMs>` — serves one delta-encoded chunk. Supports `Accept-Encoding: gzip` for transparent compression.
+
+## Connections
+
+- **Called by `portal/main.go:71-74`.** `NewServer` + `srv.StartRecording` + `srv.Start` — the HTTP server is the portal's only runtime component.
+- **Calls `portal/internal/fs/`:** `BuildNetwork` (live snapshot), `ReconstructTape` (full rebuild from events + mailbox), and all types (`TapeFrame`, `Network`, `AgentNode`, `MailEdge`, etc.).
+- **Calls `portal/i18n/`:** `i18n.Lang()` for the language field on `/api/network` responses.
+- **Port file consumed by the TUI.** `main.go` writes `.portal/port` via `srv.Start`; the TUI reads it to discover the portal URL. See `tui/ANATOMY.md`.
+
+## Composition
+
+- **Parent:** `portal/internal/`. Sibling packages: `fs/`, `migrate/`.
+- **Files:** `server.go` (~204 lines), `handlers.go` (~175 lines), `replay.go` (~655 lines), plus `*_test.go` files.
+- **No sub-packages.** All API logic is in this flat package.
+
+## State
+
+- **`.portal/topology.jsonl`** — Always written with `TopologyMu` held. Appended by `AppendTopology` (live recording) and overwritten by `NewRebuildHandler` (reconstruction).
+- **`.portal/replay/chunks/<hourMs>.json.gz`** — Gzip-compressed delta-encoded hourly chunks. Written during reconstruction (`server.go:102-104`) and on every `buildManifest` call when a new hour completes.
+- **`.portal/replay/chunks/manifest.json`** — Chunk index (`ReplayManifest`). Written by `fullCompile` and `buildManifest`.
+- **`.portal/reconstruct.progress`** — Temporary `"N/M"` file. Written by the reconstruction loop; deleted on completion. Read by `/api/topology/progress`.
+
+## Notes
+
+- **TopologyMu is coarse-grained.** One global lock gates all topology I/O — both live append (3s ticker) and rebuild (POST handler). The rebuild endpoint replaces the file entirely while holding the lock.
+- **Delta encoding is the memory-replay strategy.** Instead of replaying every 3-second frame, the frontend requests hourly chunks and interpolates. Keyframes every 100 frames anchor the interpolation; deltas carry only changed fields.
+- **Old-format detection is structural.** `needsReconstruction` checks whether the most recent JSONL line's mail edges carry `direct` fields. Missing fields → rebuild. This is format migration driven by data inspection, not version stamps.

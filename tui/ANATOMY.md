@@ -1,0 +1,67 @@
+# tui — the `lingtai-tui` binary
+
+> **Maintenance:** see `lingtai-tui-anatomy` (at `tui/internal/preset/skills/lingtai-tui-anatomy/SKILL.md`).
+
+This folder is the self-contained Go module for the `lingtai-tui` terminal UI binary. It ships as a single executable built from `main.go` (~889 lines) with platform-specific companions, embedding the i18n tables. All substantive logic lives under `internal/`. The binary has two faces: a subcommand surface (`purge`, `list`, `clean`, `suspend`, `timemachine`, `postman`) and an interactive Bubble Tea v2 UI that launches Python agents as subprocesses and observes them via the filesystem.
+
+## Components
+
+- **`main.go:28-889`** — single-file `package main`. The version stamp (`main.go:29`, set via `-ldflags`), welcome/help text, and interactive entry (`main.go:31-360`). After parsing subcommands, it runs global migrations, checks invariants (init.json all-or-nothing, exactly-one-orchestrator), handles upgrade prompts and first-run wizard routing, then launches Bubble Tea.
+- **`main.go:31-75`** — subcommand dispatch. Each subcommand returns early; the fallthrough path at line 75 starts the interactive TUI.
+- **`main.go:763-837`** — `cleanMain`: suspend agents in `.lingtai/` (10s timeout), then `os.RemoveAll`.
+- **`main.go:839-887`** — `postmanMain`: parse `--port`, collect watch directories, call `postman.Run`.
+- **`purge_unix.go:17-122`** — `purgeMain` (unix): `ps aux | grep "lingtai run"`, SIGTERM → SIGKILL survivors. Build tag `!windows`.
+- **`purge_windows.go`** — `purgeMain` (windows): equivalent via Windows process enumeration.
+- **`list_unix.go:15-161`** — `listMain` (unix): enumerate running agents with uptime, phantom detection (`.lingtai/` deleted but process still running). Build tag `!windows`.
+- **`list_windows.go`** — `listMain` (windows): equivalent.
+- **`suspend_unix.go:14-86`** — `suspendMain` (unix): discover agents via `.agent.json`, write `.suspend` files, wait 5s. Build tag `!windows`.
+- **`suspend_windows.go`** — `suspendMain` (windows): equivalent.
+- **`agent_count_unix.go:16-38`** — `countRunningAgents` (unix): lightweight `ps aux` scan used by `maybeShowAgentCount`. Build tag `!windows`.
+- **`agent_count_windows.go`** — `countRunningAgents` (windows): equivalent.
+- **`exec_unix.go:8-9`** — `syscallExec` (unix): wraps `syscall.Exec` for the self-restart-after-upgrade path. Build tag `!windows`.
+- **`exec_windows.go`** — `syscallExec` (windows): equivalent (process replacement differs on Windows).
+- **`Makefile:1-23`** — build, dev (fast local), cross-compile (darwin/linux × arm64/amd64), clean. Version stamp via `-ldflags "-X main.version=$(VERSION)"` where `VERSION` is `git describe --tags --always`.
+- **`i18n/i18n.go:10`** — `//go:embed en.json zh.json wen.json`. The only embed target in the root `tui/` package; all other embeds are in `internal/preset/`.
+- **`tui/internal/`** — all substantive packages (tui screens, preset engine, migration system, filesystem readers, process launcher, postman, timemachine, secretary, lock shims).
+
+## Connections
+
+- **Called from:** the shell (`lingtai-tui`), Homebrew tap (`lingtai-ai/lingtai/lingtai-tui`), `install.sh`.
+- **Calls out:** `tui/internal/tui` (Bubble Tea app), `tui/internal/migrate` (per-project migrations), `tui/internal/globalmigrate` (per-machine migrations), `tui/internal/preset` (bootstrap + library population), `tui/internal/process` (agent launch), `tui/internal/config` (global config, venv, upgrade checks), `tui/internal/postman` (mail relay daemon), `tui/internal/timemachine` (git history daemon).
+- **Version flow:** `Makefile:4` injects `git describe` into `main.go:29`. On startup, `main.go:118` calls `tui.SetTUIVersion(version)`, which stores it for `/doctor` drift detection.
+- **Upgrade self-restart:** `main.go:108` calls `syscallExec` (from platform-specific `exec_*.go`) to replace the running binary after a successful `brew upgrade`.
+- **i18n loading:** `i18n/i18n.go` embeds the three locale JSONs; `main.go:249` sets the active locale from `tuiCfg.Language`.
+
+## Composition
+
+- **Parent:** repo root (`../ANATOMY.md`)
+- **Subfolders:**
+  - `tui/internal/tui/` — Bubble Tea screens (~19k LOC; `tui/internal/tui/ANATOMY.md`)
+  - `tui/internal/preset/` — preset load/save/apply, embeds templates/recipes
+  - `tui/internal/migrate/` — per-project migrations (shared version space with portal)
+  - `tui/internal/globalmigrate/` — per-machine migrations (`~/.lingtai-tui/`)
+  - `tui/internal/fs/` — filesystem readers for agent state
+  - `tui/internal/config/` — global TUI config, venv, registry
+  - `tui/internal/process/` — subprocess launcher
+  - `tui/internal/postman/` — UDP cross-internet mail relay
+  - `tui/internal/timemachine/` — git-backed history daemon
+  - `tui/internal/secretary/` — assistant subsystem
+  - `tui/i18n/` — en/zh/wen locale tables
+  - `tui/scripts/` — build helpers
+- **Build output:** `tui/bin/lingtai-tui` (single binary)
+- **Sibling binaries:** `portal/` — `lingtai-portal` web server
+
+## State
+
+- **Writes:** `tui/bin/lingtai-tui` (build artifact). Subcommands write signal files (`.suspend`) and can remove `.lingtai/` (`cleanMain`).
+- **Reads:** `~/.lingtai-tui/` (global config, venv, presets), `<project>/.lingtai/` (agent state), `~/.lingtai-tui/config.json` (TUI preferences).
+- **Version stamp:** `main.go:29` — set at build time, never changes at runtime.
+- **Upgrade sentinels:** `~/.lingtai-tui/.firstrun` (one-time welcome), `~/.lingtai-tui/.last_agent_check` (periodic agent count reminder).
+
+## Notes
+
+- **Binary naming is `lingtai-tui`, never `lingtai`.** `lingtai` is the Python agent CLI inside the runtime venv.
+- **`main.go` is intentionally flat** — every subcommand's `*Main()` function is defined inline in `main.go` or platform-specific `*_unix.go`/`*_windows.go` files. Don't refactor subcommands into `internal/` packages; the flat `main.go` is the contract.
+- **Platform shims follow the `//go:build !windows` pattern.** Unix is the primary target; Windows files mirror the same function signatures. Every subcommand (`purge`, `list`, `suspend`) plus `countRunningAgents` and `syscallExec` have paired platform files.
+- **The 7-file platform split** covers: `purge`, `list`, `suspend`, `agent_count`, `exec`. The `timemachine` and `postman` subcommands live in `internal/` and share no platform-specific `main.go` surface.
+- **Version stamping:** `Makefile:4` uses `git describe --tags --always`. Dev builds get `-X main.version=dev`. The upgrade check in `main.go:79-82` skips dev builds (those containing `-` in the version string).

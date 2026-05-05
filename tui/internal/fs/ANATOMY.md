@@ -1,0 +1,96 @@
+# fs
+
+> **Maintenance:** see the `lingtai-tui-anatomy` skill at `tui/internal/preset/skills/lingtai-tui-anatomy/SKILL.md`. Coding agents update this file in same-commit as code changes.
+
+## What this is
+
+The TUI's read-only window into an agent working directory (`<project>/.lingtai/<agent>/`). All agent state — manifest, heartbeat, mail, token ledger, location, network topology, chat history — is read through this package. The kernel writes; the TUI never writes agent-owned files (except signal files and human outbox mail).
+
+## Components
+
+| Symbol | Citation | Purpose |
+|--------|----------|---------|
+| **agent.go** | | |
+| `ReadAgent(dir)` | `tui/internal/fs/agent.go:26` | reads `.agent.json` → `AgentNode` (address, name, state, is_human, capabilities, location) |
+| `ParseCapabilities(raw)` | `tui/internal/fs/agent.go:56` | handles `[]string` and `[["name", {}], ...]` tuple formats |
+| `ReadInitManifest(dir)` | `tui/internal/fs/agent.go:85` | reads `init.json`, extracts manifest, flattens `llm.*` and `soul.delay` |
+| `DiscoverAgents(baseDir)` | `tui/internal/fs/agent.go:151` | scans for all subdirectories with `.agent.json` |
+| `ReadStatus(dir)` | `tui/internal/fs/agent.go:193` | reads `.status.json` → `AgentStatus` (tokens, runtime) |
+| `AggregateTokens(dirs)` | `tui/internal/fs/agent.go:214` | sums `TokenTotals` across multiple agent ledgers |
+| `SumTokenLedger(path)` | `tui/internal/fs/agent.go:229` | sums a single `token_ledger.jsonl` → `TokenTotals` |
+| `SumTokenLedgerByProvider` | `tui/internal/fs/agent.go:280` | groups ledger entries by derived provider name + recent N entries |
+| `DeriveLedgerProvider` | `tui/internal/fs/agent.go:327` | maps endpoint host / model prefix → canonical provider name |
+| `WritePrompt` | `tui/internal/fs/agent.go:117` | writes `.prompt` signal file (TUI→agent injection) |
+| `WriteInquiry` | `tui/internal/fs/agent.go:124` | writes `.inquiry` signal file; no-op if `.inquiry` or `.inquiry.taken` exists |
+| **heartbeat.go** | | |
+| `IsAlive(dir, thresholdSec)` | `tui/internal/fs/heartbeat.go:11` | reads `.agent.heartbeat` unix timestamp, returns `age < threshold` |
+| `IsAliveHuman()` | `tui/internal/fs/heartbeat.go:24` | always `true` |
+| **mail.go** | | |
+| `ReadInbox(dir)` | `tui/internal/fs/mail.go:14` | reads `mailbox/inbox/` → `[]MailMessage` |
+| `ReadSent(dir)` | `tui/internal/fs/mail.go:18` | reads `mailbox/sent/` → `[]MailMessage` |
+| `MailCache` | `tui/internal/fs/mail.go:25` | incremental refresh cache: outbox + inbox + sent merged |
+| `NewMailCache(humanDir)` | `tui/internal/fs/mail.go:35` | creates cache; `Refresh()` returns updated copy (receiver not mutated) |
+| `WriteMail` | `tui/internal/fs/mail.go:163` | writes to recipient inbox + sender sent (or human outbox for pseudo-agent) |
+| **ledger.go** | | |
+| `ReadLedger(dir)` | `tui/internal/fs/ledger.go:17` | reads `delegates/ledger.jsonl` → `[]AvatarEdge` + child dirs |
+| **location.go** | | |
+| `ResolveLocation()` | `tui/internal/fs/location.go:23` | queries `ipinfo.io/json` → `Location` |
+| `LocationStale(loc, maxAge)` | `tui/internal/fs/location.go:52` | true if `ResolvedAt` exceeds `maxAge` |
+| `UpdateHumanLocation(humanDir)` | `tui/internal/fs/location.go:65` | reads human `.agent.json`, resolves if stale, writes atomically |
+| **network.go** | | |
+| `BuildNetwork(baseDir)` | `tui/internal/fs/network.go:8` | full topology: nodes, avatar edges, contact edges, mail edges, stats |
+| **resolve.go** | | |
+| `ParseAddress(addr)` | `tui/internal/fs/resolve.go:16` | `"localhost:/path"` or `"[ipv6]:/path"` → `(host, path, ok)` |
+| `IsRemoteAddress(addr)` | `tui/internal/fs/resolve.go:62` | true if non-localhost host prefix |
+| `ResolveAddress(addr, baseDir)` | `tui/internal/fs/resolve.go:81` | relative name → absolute path; host:path → as-is |
+| `RelativizeAddress(addr, baseDir)` | `tui/internal/fs/resolve.go:94` | absolute → relative by stripping `baseDir/` prefix |
+| **signal.go** | | |
+| `Signal` type | `tui/internal/fs/signal.go:9` | `SignalSleep`, `SignalSuspend`, `SignalInterrupt` |
+| `TouchSignal`, `HasSignal` | `tui/internal/fs/signal.go:17,21` | write/check `.sleep` / `.suspend` / `.interrupt` |
+| `CleanSignals(dir)` | `tui/internal/fs/signal.go:32` | remove all signal + refresh handshake files |
+| `SuspendAndWait` | `tui/internal/fs/signal.go:43` | touch `.suspend`, poll heartbeat until dead or timeout |
+| **session.go** | | |
+| `SessionCache` | `tui/internal/fs/session.go:36` | append-only cache backed by `session.jsonl`; tails mail + events + inquiries |
+| `NewSessionCache` | `tui/internal/fs/session.go:65` | creates cache, calls `RebuildFromSources` after construction |
+| `RebuildFromSources` | `tui/internal/fs/session.go:84` | full ingest from mail cache + events.jsonl + soul_inquiry.jsonl + soul_flow.jsonl |
+| `Refresh` | `tui/internal/fs/session.go:666` | incremental poll of all three sources |
+| **session_dump.go** | | |
+| `ProjectHash(projectPath)` | `tui/internal/fs/session_dump.go:15` | SHA-256 first 12 hex chars |
+| `DumpAllHours` | `tui/internal/fs/session_dump.go:118` | groups entries by hour, writes `~/.lingtai-tui/brief/projects/<hash>/history/` |
+| **contacts.go** | | |
+| `ReadContacts(dir)` | `tui/internal/fs/contacts.go:15` | reads `mailbox/contacts.json` → `[]ContactEdge` |
+| **types.go** | | |
+| `AgentNode` | `tui/internal/fs/types.go:15` | address, agent_name, nickname, state, alive, is_human, capabilities, location |
+| `AvatarEdge`, `ContactEdge`, `MailEdge` | `tui/internal/fs/types.go:28-46` | graph edge types |
+| `Network`, `NetworkStats` | `tui/internal/fs/types.go:49-66` | full topology + aggregate counts |
+| `MailMessage` | `tui/internal/fs/types.go:69` | mailbox message schema; `Delivered` is transient (`json:"-"`) |
+| `Location` | `tui/internal/fs/types.go:5` | city, region, country, timezone, loc, resolved_at |
+
+## Connections
+
+- **Called by `tui/internal/tui/`** — every Bubble Tea screen reads agent state through this package (network home, agent detail, mail viewer, kanban, session log).
+- **Reads from agent working directories** — `.agent.json`, `.agent.heartbeat`, `.status.json`, `mailbox/*/`, `logs/token_ledger.jsonl`, `logs/events.jsonl`, `logs/soul_inquiry.jsonl`, `logs/soul_flow.jsonl`, `delegates/ledger.jsonl`, `mailbox/contacts.json`.
+- **Writes signal files** (the only agent-owned files the TUI writes): `.sleep`, `.suspend`, `.interrupt`, `.prompt`, `.inquiry`, `.refresh`/`.refresh.taken`.
+- **Writes human outbox mail** — `WriteMail` for human (pseudo-agent) writes to `human/mailbox/outbox/<uuid>/`.
+- **Calls `ipinfo.io`** — `ResolveLocation` makes an HTTP call; `UpdateHumanLocation` caches result in human's `.agent.json`.
+
+## Composition
+
+- **Parent:** `tui/internal/` (no own anatomy)
+- **Subfolders:** none — flat package
+- **Siblings:** `tui/internal/preset/ANATOMY.md`, `tui/internal/migrate/ANATOMY.md` — fs is a data layer, preset and migrate are logic layers
+
+## State
+
+- **Reads (never writes)**: `.agent.json`, `.agent.heartbeat`, `.status.json`, `mailbox/inbox/*`, `mailbox/sent/*`, `logs/token_ledger.jsonl`, `logs/events.jsonl`, `logs/soul_inquiry.jsonl`, `logs/soul_flow.jsonl`, `delegates/ledger.jsonl`, `mailbox/contacts.json`.
+- **Writes**: signal files (`.sleep`, `.suspend`, `.interrupt`, `.prompt`, `.inquiry`), human `mailbox/outbox/*`, human `.agent.json` location field.
+- **Produces**: `~/.lingtai-tui/brief/projects/<hash>/history/YYYY-MM-DD-HH.md` — secretary dump files via `DumpAllHours`.
+
+## Notes
+
+- **Read-only for agent state.** This package is the TUI's window — it never writes agent-owned files except signal files. The kernel owns `.agent.json`, heartbeats, mailboxes, ledgers, logs. Do not add write paths for kernel-owned state.
+- **`Delivered` is transient.** `MailMessage.Delivered` is `json:"-"` — set by `MailCache.Refresh()` based on which folder the message was found in. Outbox → false; inbox/sent → true.
+- **`MailCache` is copy-on-refresh.** `Refresh()` returns a new `MailCache`; the receiver is not mutated. Safe for goroutine use.
+- **Session cache reconstruction.** `RebuildFromSources` is idempotent — it re-ingests all mail + events + inquiries from offset 0, sorts by timestamp, and rewrites `session.jsonl`. Incremental `Refresh` tails from EOF offsets.
+- **Provider derivation.** `DeriveLedgerProvider` uses endpoint host substring matching first, then model prefix fallback. Unknown endpoints surface the hostname so the UI still shows a breakdown.
+- **Location is cached for 1 hour.** `UpdateHumanLocation` checks `LocationStale` with a 1-hour maxAge before calling `ipinfo.io`.
