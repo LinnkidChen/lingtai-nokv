@@ -73,6 +73,13 @@ Versioned, append-only, forward-only migration system. Each migration is a file 
 
 **IMPORTANT: The TUI and portal share the same `meta.json` version space but have separate migration registries.** When adding migrations to the TUI, you MUST also bump `CurrentVersion` in `portal/internal/migrate/migrate.go`. Migrations that touch shared on-disk state (init.json schema, preset paths, etc.) should be implemented in BOTH packages with identical logic — copy the file across. TUI-only migrations (assets, recipe state, anything portal doesn't read) get a no-op stub `Fn: func(_ string) error { return nil }` in the portal registry to preserve the version slot. Otherwise the portal refuses to open any project the TUI has already touched.
 
+**Dev-mode rebuild gotcha:** When running symlinked dev binaries (`/opt/homebrew/bin/lingtai-{tui,portal}` → `~/Documents/GitHub/lingtai/{tui,portal}/bin/...`), a stale portal binary against a freshly-migrated project fails with `data version N is newer than this binary supports (M); upgrade lingtai-portal`. After ANY migration bump (or whenever `/viz` complains), rebuild BOTH:
+```bash
+cd ~/Documents/GitHub/lingtai/tui && make build
+cd ~/Documents/GitHub/lingtai/portal && make build
+```
+The brew-installed pair never hits this because they ship together at the same version; dev mode hits it whenever you rebuild one and forget the other. Symptom: `/viz` works on brew install, fails on dev install.
+
 Recent migrations worth knowing about:
 - **m029** — `manifest.preset.path` (directory the kernel scanned) → `manifest.preset.allowed` (explicit list of allowed preset path strings). Schema is now declarative.
 - **m030** — preset directory split: rewrites flat `~/.lingtai-tui/presets/X.json` paths in init.json to either `presets/templates/X.json` or `presets/saved/X.json` (see "Preset architecture" below).
