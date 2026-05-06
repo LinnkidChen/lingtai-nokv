@@ -35,6 +35,8 @@ type ChatMessage struct {
 	Question    string   // question text (for /btw insight events)
 	Dismissed   bool     // true after user presses Esc; only show in verbose
 	Delivered   bool     // for Type=="mail" && IsFromMe: true if recipient picked up
+	Sources     []string // for Type=="notification": source keys (email, soul, system, ...)
+	Source      string   // for Type=="aed": subtype ("attempt" | "exhausted" | "timeout")
 }
 
 // ViewChangeMsg requests the app to switch views.
@@ -336,7 +338,7 @@ func (m *MailModel) shouldShow(e fs.SessionEntry) bool {
 	switch e.Type {
 	case "mail":
 		return true
-	case "thinking", "diary", "text_input", "text_output", "soul_flow":
+	case "thinking", "diary", "text_input", "text_output", "soul_flow", "notification", "aed":
 		return m.verbose >= verboseThinking
 	case "tool_call", "tool_result":
 		return m.verbose >= verboseExtended
@@ -363,6 +365,8 @@ func sessionEntryToChatMessage(e fs.SessionEntry, humanAddr string) ChatMessage 
 		Attachments: e.Attachments,
 		Question:    e.Question,
 		Delivered:   e.Delivered,
+		Sources:     e.Sources,
+		Source:      e.Source,
 	}
 	if e.Type == "mail" {
 		cm.IsFromMe = e.From == "human"
@@ -742,6 +746,56 @@ func (m MailModel) renderMessages(msgs []ChatMessage) string {
 				wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(voiceLine)
 				for _, line := range strings.Split(wrapped, "\n") {
 					b.WriteString(soulStyle.Render("    "+line) + "\n")
+				}
+			}
+
+		case "notification":
+			// Kernel notification-sync rewire. Mirrors the soul_flow style
+			// (same green palette) so it reads as agent inner state rather
+			// than tool noise. Body is the kernel-logged summary string;
+			// when Sources has >1 entry we also list them on their own
+			// lines for clarity.
+			wrapWidth := m.width - 6
+			if wrapWidth < 20 {
+				wrapWidth = 20
+			}
+			notifStyle := lipgloss.NewStyle().Foreground(ColorAgent).Italic(true)
+			labelStyle := lipgloss.NewStyle().Foreground(ColorAccent).Bold(true)
+			b.WriteString(labelStyle.Render("  ✉ notifications") + "\n")
+			if msg.Body != "" {
+				wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(msg.Body)
+				for _, line := range strings.Split(wrapped, "\n") {
+					b.WriteString(notifStyle.Render("    "+line) + "\n")
+				}
+			}
+			if len(msg.Sources) > 1 {
+				for _, src := range msg.Sources {
+					b.WriteString(notifStyle.Render("    • "+src) + "\n")
+				}
+			}
+
+		case "aed":
+			// Agent error-recovery (kernel distress). Distinct orange palette
+			// rather than the green soul/notification palette: AED is not
+			// agent inner reflection, it's the kernel telling us the LLM
+			// returned empty / errored and recovery was attempted. Subtype
+			// (attempt | exhausted | timeout) is in msg.Source and inlined
+			// in the header so users can scan AED storms quickly.
+			wrapWidth := m.width - 6
+			if wrapWidth < 20 {
+				wrapWidth = 20
+			}
+			aedBodyStyle := lipgloss.NewStyle().Foreground(ColorTool).Italic(true)
+			aedLabelStyle := lipgloss.NewStyle().Foreground(ColorTool).Bold(true)
+			subtype := msg.Source
+			if subtype == "" {
+				subtype = "event"
+			}
+			b.WriteString(aedLabelStyle.Render("  ⚠ aed "+subtype) + "\n")
+			if msg.Body != "" {
+				wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(msg.Body)
+				for _, line := range strings.Split(wrapped, "\n") {
+					b.WriteString(aedBodyStyle.Render("    "+line) + "\n")
 				}
 			}
 

@@ -25,6 +25,7 @@ type SessionEntry struct {
 	Attachments []string `json:"attachments,omitempty"`
 	Source      string   `json:"source,omitempty"` // "human", "insight" — for inquiry entries
 	FireID      string   `json:"fire_id,omitempty"` // soul_flow fires — used to look up voices in soul_flow.jsonl
+	Sources     []string `json:"sources,omitempty"` // notification entries — list of source keys (email, soul, system, ...)
 
 	// Delivered is a transient field propagated from MailMessage.Delivered.
 	// Only meaningful for Type == "mail". Not persisted to session.jsonl.
@@ -513,9 +514,31 @@ func parseEvent(line []byte) *SessionEntry {
 	if eventType == "consultation_fire" {
 		eventType = "soul_flow"
 	}
+	// Promote notification_pair_injected (kernel notification-sync wire
+	// rewire) into a first-class "notification" SessionEntry so the
+	// mail view can render it at the same Ctrl+O depth as soul_flow.
+	if eventType == "notification_pair_injected" {
+		eventType = "notification"
+	}
+	// Promote the three AED (agent error-recovery) events into a single
+	// "aed" SessionEntry type. Subtype ("attempt" | "exhausted" | "timeout")
+	// is captured below in the Source field so the renderer can vary
+	// wording without juggling three nearly-identical render cases.
+	aedSubtype := ""
+	switch eventType {
+	case "aed_attempt":
+		aedSubtype = "attempt"
+		eventType = "aed"
+	case "aed_exhausted":
+		aedSubtype = "exhausted"
+		eventType = "aed"
+	case "aed_timeout":
+		aedSubtype = "timeout"
+		eventType = "aed"
+	}
 
 	switch eventType {
-	case "thinking", "diary", "text_input", "text_output", "tool_call", "tool_result", "insight", "soul_flow":
+	case "thinking", "diary", "text_input", "text_output", "tool_call", "tool_result", "insight", "soul_flow", "notification", "aed":
 		// ok
 	default:
 		return nil
@@ -548,6 +571,21 @@ func parseEvent(line []byte) *SessionEntry {
 		if fid, ok := raw["fire_id"].(string); ok {
 			e.FireID = fid
 		}
+	}
+	if eventType == "notification" {
+		// Carry the per-source list so the renderer can emit one
+		// separated section per source even when the kernel summary
+		// string is missing (older events) or not parseable.
+		if rawSources, ok := raw["sources"].([]interface{}); ok {
+			for _, s := range rawSources {
+				if str, ok := s.(string); ok && str != "" {
+					e.Sources = append(e.Sources, str)
+				}
+			}
+		}
+	}
+	if eventType == "aed" {
+		e.Source = aedSubtype
 	}
 
 	return e
@@ -590,6 +628,50 @@ func extractSessionEventText(entry map[string]interface{}, eventType string) str
 			return fmt.Sprintf("(soul flow fired — %d voice(s))", int(count))
 		}
 		return strings.Join(lines, "\n")
+	case "notification":
+		// Prefer the kernel-logged summary string when present (it
+		// already carries per-source counts in human-readable form).
+		// Older events lack `summary` — fall back to a sources list.
+		if summary, ok := entry["summary"].(string); ok && summary != "" {
+			return summary
+		}
+		rawSources, _ := entry["sources"].([]interface{})
+		var srcs []string
+		for _, s := range rawSources {
+			if str, ok := s.(string); ok && str != "" {
+				srcs = append(srcs, str)
+			}
+		}
+		if len(srcs) == 0 {
+			return "(notification rewire)"
+		}
+		return fmt.Sprintf("notifications: %s", strings.Join(srcs, ", "))
+	case "aed":
+		// Recover the original subtype from the untouched raw["type"].
+		// Wording differs per subtype: attempts include the attempt index
+		// and the LLM-side error description, exhausted reports the final
+		// attempt count, timeout reports elapsed seconds.
+		origType, _ := entry["type"].(string)
+		switch origType {
+		case "aed_attempt":
+			attempt, _ := entry["attempt"].(float64)
+			errMsg, _ := entry["error"].(string)
+			if errMsg == "" {
+				errMsg = "(no error description)"
+			}
+			return fmt.Sprintf("attempt %d — %s", int(attempt), errMsg)
+		case "aed_exhausted":
+			attempts, _ := entry["attempts"].(float64)
+			errMsg, _ := entry["error"].(string)
+			if errMsg == "" {
+				errMsg = "(no error description)"
+			}
+			return fmt.Sprintf("exhausted after %d attempt(s) — %s", int(attempts), errMsg)
+		case "aed_timeout":
+			seconds, _ := entry["seconds"].(float64)
+			return fmt.Sprintf("recovery wait timed out after %.1fs", seconds)
+		}
+		return "(aed event)"
 	case "tool_call":
 		name, _ := entry["tool_name"].(string)
 		args, _ := entry["tool_args"].(string)
