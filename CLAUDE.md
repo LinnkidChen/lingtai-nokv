@@ -67,6 +67,28 @@ Go + Bubble Tea terminal interface. Key facts:
 - Communicates with running agents via filesystem only: reads `.lingtai/` metadata, heartbeat files, and signal files inside each agent working directory
 - Agent discovery uses `lingtai_kernel.handshake` conventions (`is_agent`, `is_alive` checks on working directories)
 
+### Dev mode for the TUI/portal binaries
+
+Dev mode means **`/opt/homebrew/bin/lingtai-{tui,portal}` are symlinks to the freshly-built binaries** in this repo, so `which lingtai-tui` resolves to `~/Documents/GitHub/lingtai/tui/bin/lingtai-tui`. Once the symlinks are in place, every `make build` here is immediately picked up by the user's shell — no `brew reinstall` cycle.
+
+Setup (one-time, only needed if the symlinks don't already exist):
+```bash
+ln -sf ~/Documents/GitHub/lingtai/tui/bin/lingtai-tui /opt/homebrew/bin/lingtai-tui
+ln -sf ~/Documents/GitHub/lingtai/portal/bin/lingtai-portal /opt/homebrew/bin/lingtai-portal
+```
+
+To go back to the brew-installed pair: `brew reinstall lingtai-tui` overwrites the symlinks with real binaries.
+
+Verify dev mode is active:
+```bash
+readlink -f $(which lingtai-tui)   # → ~/Documents/GitHub/lingtai/tui/bin/lingtai-tui
+lingtai-tui --version              # → vX.Y.Z-N-gSHORTSHA (git describe — never a clean vX.Y.Z tag in dev)
+```
+
+A clean `vX.Y.Z` version string means the brew-installed binary is in front; a `-N-gSHORTSHA` suffix means dev mode is live. The `-N-g…` form comes from `git describe --tags` and is what `make build` bakes into `-X main.version`.
+
+After ANY rebuild of one binary (TUI OR portal), rebuild BOTH together — see the "Dev-mode rebuild gotcha" under Migrations below for why.
+
 ### Migrations (`tui/internal/migrate/`)
 
 Versioned, append-only, forward-only migration system. Each migration is a file `m<NNN>_<name>.go` exporting a function `func migrate<Name>(lingtaiDir string) error`. Register it in `migrate.go` by appending to the `migrations` slice and bumping `CurrentVersion`. Migrations run once per project at TUI launch (version tracked in `.lingtai/meta.json`). They can read global state (`globalTUIDir()` helper) but receive the project's `.lingtai/` dir as input. Print warnings directly with `fmt.Println` — no i18n needed since migrations run before the TUI renders.
