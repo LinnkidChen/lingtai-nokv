@@ -19,6 +19,7 @@ A collection of small, useful skills. Each sub-skill lives in its own folder und
 | Sub-Skill | Description | When to Use |
 |-----------|-------------|-------------|
 | [token-usage](token-usage/) | Network-wide token cost calculator using litellm + OpenRouter pricing | Human asks about costs, budget, token usage, or spending |
+| [claude-code](claude-code/) | Delegate code implementation, patch writing, docs, and refactoring to Claude Code CLI | Human asks to write code, generate patches, refactor, or delegate implementation work |
 
 ## How to Use
 
