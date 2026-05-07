@@ -1,0 +1,22 @@
+{
+  "mimo-v2.5": {
+    "input_cost_per_token": 0.000001,
+    "output_cost_per_token": 0.000003,
+    "cache_read_input_token_cost": 0.0000002
+  },
+  "mimo-v2.5-pro": {
+    "input_cost_per_token": 0.000001,
+    "output_cost_per_token": 0.000003,
+    "cache_read_input_token_cost": 0.0000002
+  },
+  "mimo-v2.5-lite": {
+    "input_cost_per_token": 0.0000002,
+    "output_cost_per_token": 0.0000006,
+    "cache_read_input_token_cost": 0.00000004
+  },
+  "mimo-v2-flash": {
+    "input_cost_per_token": 0.00000009,
+    "output_cost_per_token": 0.00000029,
+    "cache_read_input_token_cost": 0.00000002
+  }
+}
