@@ -20,6 +20,7 @@ import (
 	"github.com/anthropics/lingtai-tui/i18n"
 	"github.com/anthropics/lingtai-tui/internal/config"
 	"github.com/anthropics/lingtai-tui/internal/migrate"
+	"github.com/anthropics/lingtai-tui/internal/preset"
 )
 
 // tuiVersion is set once at startup by main via SetTUIVersion.
@@ -168,6 +169,18 @@ func runDoctor(orchDir, globalDir string) doctorResultMsg {
 			Text: i18n.T("doctor.suggest_refresh"), Hint: true,
 		})
 		return doctorResultMsg{Lines: lines}
+	}
+
+	// Phase 2.5: check base_url for providers that require it
+	if baseURL == "" {
+		if regions, ok := preset.ProviderRegionURLs[provider]; ok && len(regions) > 0 {
+			lines = append(lines, doctorLine{
+				Text: i18n.TF("doctor.llm_no_base_url", provider),
+			})
+			lines = append(lines, doctorLine{
+				Text: i18n.T("doctor.suggest_base_url"), Hint: true,
+			})
+		}
 	}
 
 	// Phase 3: live API check

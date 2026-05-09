@@ -333,6 +333,8 @@
   "doctor.llm_overloaded": "✗ 天过载：%s",
   "doctor.llm_network": "✗ 天不达：%s",
   "doctor.llm_no_key": "✗ 未设密钥",
+  "doctor.llm_no_base_url": "✗ %s 未设端",
+  "doctor.suggest_base_url": "→ 开预设编器选区域 (CN / INTL)，后 /refresh。",
   "doctor.llm_unknown": "✗ 天误：%s",
   "doctor.portal_ok": "✓ lingtai-portal 在途",
   "doctor.portal_missing": "✗ lingtai-portal 不在途",

@@ -333,6 +333,8 @@
   "doctor.llm_overloaded": "✗ LLM 过载：%s",
   "doctor.llm_network": "✗ LLM 不可达：%s",
   "doctor.llm_no_key": "✗ 未设置 API 密钥",
+  "doctor.llm_no_base_url": "✗ 未设置 %s 的 API 端点 (base_url)",
+  "doctor.suggest_base_url": "→ 打开预设编辑器选择区域 (CN / INTL)，然后 /refresh。",
   "doctor.llm_unknown": "✗ LLM 错误：%s",
   "doctor.portal_ok": "✓ lingtai-portal 在 PATH 中",
   "doctor.portal_missing": "✗ lingtai-portal 不在 PATH 中",

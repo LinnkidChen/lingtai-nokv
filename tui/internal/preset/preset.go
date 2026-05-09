@@ -421,6 +421,27 @@ func RefreshTemplates() error {
 	return nil
 }
 
+// RegionURL pairs a human-readable label with an API base URL.
+type RegionURL struct {
+	Label string // e.g. "CN", "INTL"
+	URL   string
+}
+
+// ProviderRegionURLs maps provider names to their regional endpoint
+// options. Providers not in this map have a single endpoint (or none)
+// and their base_url is free-text in the editor. The first entry is
+// the default for new presets.
+var ProviderRegionURLs = map[string][]RegionURL{
+	"zhipu": {
+		{Label: "CN", URL: "https://open.bigmodel.cn/api/coding/paas/v4"},
+		{Label: "INTL", URL: "https://api.z.ai/api/coding/paas/v4"},
+	},
+	"minimax": {
+		{Label: "CN", URL: "https://api.minimaxi.com/anthropic"},
+		{Label: "INTL", URL: "https://api.minimax.io/anthropic"},
+	},
+}
+
 // BuiltinPresets returns the built-in presets.
 func BuiltinPresets() []Preset {
 	return []Preset{
@@ -688,7 +709,8 @@ func minimaxPreset() Preset {
 		Manifest: map[string]interface{}{
 			"llm": map[string]interface{}{
 				"provider": "minimax", "model": "MiniMax-M2.7-highspeed",
-				"api_key": nil, "api_key_env": "MINIMAX_API_KEY", "base_url": nil,
+				"api_key": nil, "api_key_env": "MINIMAX_API_KEY",
+				"base_url": ProviderRegionURLs["minimax"][0].URL,
 			},
 			"capabilities": map[string]interface{}{
 				"file": e(), "bash": map[string]interface{}{"yolo": true},
@@ -711,7 +733,7 @@ func zhipuPreset() Preset {
 			"llm": map[string]interface{}{
 				"provider": "zhipu", "model": "GLM-5.1",
 				"api_key": nil, "api_key_env": "ZHIPU_API_KEY",
-				"base_url": nil, "api_compat": "openai",
+				"base_url": ProviderRegionURLs["zhipu"][0].URL, "api_compat": "openai",
 			},
 			"capabilities": map[string]interface{}{
 				"file": e(), "bash": map[string]interface{}{"yolo": true},

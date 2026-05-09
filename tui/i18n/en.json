@@ -338,6 +338,8 @@
   "doctor.llm_overloaded": "✗ LLM provider overloaded: %s",
   "doctor.llm_network": "✗ LLM unreachable: %s",
   "doctor.llm_no_key": "✗ API key not set",
+  "doctor.llm_no_base_url": "✗ No API endpoint (base_url) set for %s",
+  "doctor.suggest_base_url": "→ Open preset editor and select a region (CN / INTL), then /refresh.",
   "doctor.llm_unknown": "✗ LLM error: %s",
   "doctor.portal_ok": "✓ lingtai-portal on PATH",
   "doctor.portal_missing": "✗ lingtai-portal not found on PATH",

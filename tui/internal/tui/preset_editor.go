@@ -533,7 +533,18 @@ func (m PresetEditorModel) updateExitPrompt(msg tea.KeyMsg) (PresetEditorModel, 
 func (m *PresetEditorModel) openInline() (PresetEditorModel, tea.Cmd) {
 	f := editorFieldOrder[m.cursor]
 	switch f {
-	case feName, feSummary, feGains, feLoses, feBaseURL:
+	case feName, feSummary, feGains, feLoses:
+		m.input.SetValue(m.fieldString(f))
+		m.input.CursorEnd()
+		m.input.Focus()
+		m.mode = emInline
+	case feBaseURL:
+		// Providers with regional endpoints use ←/→ cycling; Enter is a no-op.
+		// Other providers get free-text inline edit.
+		provider := asString(m.llmMap()["provider"])
+		if _, hasRegions := preset.ProviderRegionURLs[provider]; hasRegions {
+			return *m, nil
+		}
 		m.input.SetValue(m.fieldString(f))
 		m.input.CursorEnd()
 		m.input.Focus()
@@ -858,6 +869,11 @@ func (m *PresetEditorModel) cycleFocused(dir int) {
 				m.syncCapsToModel(models[0])
 			}
 		}
+		// Reset base_url to the new provider's default region when
+		// switching to a provider with known regional endpoints.
+		if regions, ok := preset.ProviderRegionURLs[newProvider]; ok && len(regions) > 0 {
+			m.llmMap()["base_url"] = regions[0].URL
+		}
 	case feModel:
 		// If the current provider has a known model lineup, cycle through
 		// it. Otherwise no-op — Enter on free-text providers (custom,
@@ -867,6 +883,15 @@ func (m *PresetEditorModel) cycleFocused(dir int) {
 			next := cycleString(models, m.fieldString(f), dir)
 			m.llmMap()["model"] = next
 			m.syncCapsToModel(next)
+		}
+	case feBaseURL:
+		provider := asString(m.llmMap()["provider"])
+		if regions, ok := preset.ProviderRegionURLs[provider]; ok && len(regions) > 0 {
+			urls := make([]string, len(regions))
+			for i, r := range regions {
+				urls[i] = r.URL
+			}
+			m.llmMap()["base_url"] = cycleString(urls, m.fieldString(f), dir)
 		}
 	case feAPICompat:
 		opts := []string{"", "openai", "anthropic"}
@@ -1215,6 +1240,11 @@ func (m PresetEditorModel) row(f editorField, key, value string, width int) stri
 			return marker + keyStyle.Render(key) + strip
 		}
 	}
+	if f == feBaseURL {
+		if strip := m.baseURLRadioStrip(focused, valStyle); strip != "" {
+			return marker + keyStyle.Render(key) + strip
+		}
+	}
 	if value == "" {
 		value = "—"
 	}
@@ -1359,6 +1389,33 @@ func (m PresetEditorModel) modelRadioStrip(focused bool, valStyle lipgloss.Style
 	return strings.Join(parts, "  ")
 }
 
+// baseURLRadioStrip renders the base_url field as a horizontal radio
+// strip showing region labels (e.g. "● CN  ○ INTL") when the current
+// provider has regional endpoints. Returns "" when there's no region
+// list — caller falls back to the standard single-value render.
+func (m PresetEditorModel) baseURLRadioStrip(focused bool, valStyle lipgloss.Style) string {
+	provider := asString(m.llmMap()["provider"])
+	regions, ok := preset.ProviderRegionURLs[provider]
+	if !ok || len(regions) == 0 {
+		return ""
+	}
+	current := asString(m.llmMap()["base_url"])
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	parts := make([]string, 0, len(regions))
+	for _, r := range regions {
+		if r.URL == current {
+			if focused {
+				parts = append(parts, valStyle.Render("● "+r.Label))
+			} else {
+				parts = append(parts, "● "+r.Label)
+			}
+		} else {
+			parts = append(parts, subtle.Render("○ "+r.Label))
+		}
+	}
+	return strings.Join(parts, "  ")
+}
+
 // isCyclable reports whether a field accepts ←/→ to step through enum
 // values. The model row is conditional — only when the current provider
 // has a known model lineup. Free-text providers leave the model row as
@@ -1371,6 +1428,10 @@ func (m PresetEditorModel) isCyclable(f editorField) bool {
 		provider := asString(m.llmMap()["provider"])
 		_, hasPicker := providerModels[provider]
 		return hasPicker
+	case feBaseURL:
+		provider := asString(m.llmMap()["provider"])
+		_, hasRegions := preset.ProviderRegionURLs[provider]
+		return hasRegions
 	}
 	return false
 }
