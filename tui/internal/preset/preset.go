@@ -718,8 +718,6 @@ func minimaxPreset() Preset {
 				"vision": mm, "avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin": map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -742,8 +740,6 @@ func zhipuPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -777,8 +773,6 @@ func mimoPreset() Preset {
 				"avatar":     e(), "daemon": e(),
 				"library":    libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -804,8 +798,6 @@ func deepseekPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -833,8 +825,6 @@ func geminiPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": true,
 		},
 	}
 }
@@ -864,8 +854,6 @@ func kimiPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -890,8 +878,6 @@ func openrouterPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -919,8 +905,6 @@ func codexPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin":     map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
@@ -940,8 +924,6 @@ func customPreset() Preset {
 				"avatar": e(), "daemon": e(),
 				"library": libraryDefault(),
 			},
-			"admin": map[string]interface{}{"karma": true},
-			"streaming": false,
 		},
 	}
 }
