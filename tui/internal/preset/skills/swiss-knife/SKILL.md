@@ -6,9 +6,15 @@ description: >
   --session-id/--resume. Supports parallel sessions, model switching
   (haiku/sonnet/opus), budget control, and tool permission management.
   Use for delegating coding tasks, code review, iterative development;
-  (2) token-usage — token usage tracking and cost reporting.
+  (2) minimax-cli — MiniMax CLI for text-to-image, text-to-video, music
+  generation, TTS, and vision. Read when the human asks for any media
+  creation or vision task;
+  (3) openai-codex — OpenAI Codex CLI for local coding agent with remote
+  control, Vim editing, plugins, hooks, and Chrome browser integration.
+  Read when the human asks to use OpenAI Codex or compare with Claude Code;
+  (4) token-usage — token usage tracking and cost reporting.
   Each sub-skill is independent — read only the one you need.
-version: 1.3.0
+version: 1.4.0
 tags: [utilities, umbrella, toolkit]
 ---
 
@@ -22,6 +28,8 @@ A collection of small, useful skills. Each sub-skill lives in its own folder und
 |-----------|-------------|-------------|
 | [token-usage](token-usage/) | Network-wide token cost calculator using litellm + OpenRouter pricing | Human asks about costs, budget, token usage, or spending |
 | [claude-code](claude-code/) | Delegate code implementation, patch writing, docs, and refactoring to Claude Code CLI | Human asks to write code, generate patches, refactor, or delegate implementation work |
+| [minimax-cli](minimax-cli/) | MiniMax CLI for text-to-image, text-to-video, music generation, TTS, and vision | Human asks for image/video/music generation, TTS narration, or vision tasks |
+| [openai-codex](openai-codex/) | OpenAI Codex CLI — local coding agent with remote control, Vim editing, plugins, hooks, and Chrome extension | Human asks to use OpenAI Codex CLI, compare with Claude Code, or needs browser integration |
 
 ## How to Use
 
