@@ -1240,6 +1240,40 @@ func GenerateInitJSON(p Preset, agentName, dirName, lingtaiDir, globalDir string
 	return GenerateInitJSONWithOpts(p, agentName, dirName, lingtaiDir, globalDir, opts)
 }
 
+// syncCapabilityAPIKeyEnv propagates the LLM's api_key_env to any
+// capability whose provider matches the LLM provider. This ensures
+// capabilities like web_search and vision use the same resolved env
+// var slot (e.g. "ZHIPU_CN_1_API_KEY") rather than a stale preset
+// placeholder (e.g. "ZHIPU_API_KEY").
+func syncCapabilityAPIKeyEnv(manifest map[string]interface{}) {
+	llm, _ := manifest["llm"].(map[string]interface{})
+	if llm == nil {
+		return
+	}
+	llmProvider, _ := llm["provider"].(string)
+	llmKeyEnv, _ := llm["api_key_env"].(string)
+	if llmProvider == "" || llmKeyEnv == "" {
+		return
+	}
+	caps, _ := manifest["capabilities"].(map[string]interface{})
+	if caps == nil {
+		return
+	}
+	for _, cfg := range caps {
+		capMap, ok := cfg.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		capProvider, _ := capMap["provider"].(string)
+		if capProvider != llmProvider {
+			continue
+		}
+		if capKeyEnv, _ := capMap["api_key_env"].(string); capKeyEnv != "" && capKeyEnv != llmKeyEnv {
+			capMap["api_key_env"] = llmKeyEnv
+		}
+	}
+}
+
 // GenerateInitJSONWithOpts creates a full init.json from a preset with explicit agent options.
 func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDir string, opts AgentOpts) error {
 	agentDir := filepath.Join(lingtaiDir, dirName)
@@ -1261,6 +1295,13 @@ func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDi
 	if caps, ok := p.Manifest["capabilities"]; ok {
 		manifest["capabilities"] = caps
 	}
+	// Propagate the LLM's resolved api_key_env to capabilities that
+	// share the same provider. The builtin preset templates use a
+	// placeholder like "ZHIPU_API_KEY", but stampAutoEnvVar rewrites
+	// the LLM's slot to "ZHIPU_CN_1_API_KEY" etc. Without this,
+	// web_search/vision capabilities still reference the non-existent
+	// placeholder and fail at boot.
+	syncCapabilityAPIKeyEnv(manifest)
 	manifest["admin"] = map[string]interface{}{
 		"karma":   opts.Karma,
 		"nirvana": opts.Nirvana,
