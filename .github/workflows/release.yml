@@ -79,7 +79,10 @@ jobs:
                 ldflags = "-X main.version=#{version}"
                 system "go", "build", *std_go_args(ldflags: ldflags), "-o", bin/"lingtai-tui", "."
                 # Create 'lingtai' alias for backward compatibility
-                bin.install_symlink "lingtai-tui" => "lingtai"
+                # Only if 'lingtai' doesn't exist or is already a symlink to lingtai-tui
+                unless (bin/"lingtai").exist? && (!(bin/"lingtai").symlink? || (bin/"lingtai").readlink.to_s != "lingtai-tui")
+                  bin.install_symlink "lingtai-tui" => "lingtai"
+                end
               end
 
               cd "portal" do

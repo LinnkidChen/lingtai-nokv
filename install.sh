@@ -86,7 +86,12 @@ fi
 echo "==> Installing to $BIN_DIR ..."
 install -m 755 "$BUILD_DIR/lingtai-tui" "$BIN_DIR/lingtai-tui"
 # Create 'lingtai' alias for backward compatibility
-ln -sf "$BIN_DIR/lingtai-tui" "$BIN_DIR/lingtai"
+# Only if 'lingtai' doesn't exist or is already a symlink to lingtai-tui
+if [[ ! -e "$BIN_DIR/lingtai" ]] || [[ -L "$BIN_DIR/lingtai" && "$(readlink "$BIN_DIR/lingtai")" == "$BIN_DIR/lingtai-tui" ]]; then
+  ln -sfn "$BIN_DIR/lingtai-tui" "$BIN_DIR/lingtai"
+else
+  echo "  (skipping 'lingtai' alias — $BIN_DIR/lingtai already exists)"
+fi
 if [[ -f "$BUILD_DIR/lingtai-portal" ]]; then
   install -m 755 "$BUILD_DIR/lingtai-portal" "$BIN_DIR/lingtai-portal"
 fi
