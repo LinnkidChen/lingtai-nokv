@@ -1180,6 +1180,13 @@ func (m PresetEditorModel) renderForm(width, height int) string {
 	rows = append(rows, m.row(feBaseURL, lbl("base_url"), asString(llm["base_url"]), width-4))
 	rows = append(rows, m.row(feAPIKey, lbl("api_key"), m.fieldString(feAPIKey), width-4))
 	rows = append(rows, "")
+	// Mandatory capabilities — always included, not toggleable.
+	rows = append(rows, m.sectionHeader(i18n.T("preset_editor.section_mandatory")))
+	mandatoryCaps := []string{"email", "psyche", "codex", "library"}
+	for _, capName := range mandatoryCaps {
+		rows = append(rows, m.mandatoryCapRow(capName, width-4))
+	}
+	rows = append(rows, "")
 	rows = append(rows, m.sectionHeader(i18n.T("preset_editor.section_core")))
 	for _, capName := range coreCapabilities {
 		rows = append(rows, m.capRow(capFieldFor(capName), capName, width-4))
@@ -1254,6 +1261,15 @@ func (m PresetEditorModel) capEnabled(name string) bool {
 // Greys out and disables rows the current model doesn't support
 // (today: vision on text-only models). web_search additionally shows
 // an inline ● ○ provider strip on the same line.
+// mandatoryCapRow renders a non-toggleable capability row with [✓] always checked.
+func (m PresetEditorModel) mandatoryCapRow(name string, width int) string {
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	check := subtle.Render("[✓]")
+	keyCol := subtle.Render(lipgloss.NewStyle().Width(15).Render(name))
+	val := subtle.Render("—")
+	return "  " + check + " " + keyCol + val
+}
+
 func (m PresetEditorModel) capRow(f editorField, name string, width int) string {
 	focused := editorFieldOrder[m.cursor] == f
 	currentModel := asString(m.llmMap()["model"])

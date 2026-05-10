@@ -395,6 +395,7 @@
   "preset_editor.title": "编辑预设",
   "preset_editor.section_identity": "身份",
   "preset_editor.section_llm": "LLM",
+  "preset_editor.section_mandatory": "恒含",
   "preset_editor.section_core": "核",
   "preset_editor.section_capabilities": "能",
   "preset_editor.cap_disabled_hint": "（此模不容）",

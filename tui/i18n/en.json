@@ -400,6 +400,7 @@
   "preset_editor.title": "Edit preset",
   "preset_editor.section_identity": "Identity",
   "preset_editor.section_llm": "LLM",
+  "preset_editor.section_mandatory": "Always Included",
   "preset_editor.section_core": "Core",
   "preset_editor.section_capabilities": "Capabilities",
   "preset_editor.cap_disabled_hint": "(unavailable on this model)",
