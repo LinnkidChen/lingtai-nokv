@@ -88,6 +88,8 @@
   "firstrun.cap_desc.avatar": "派出独立的子 Agent（分身）。\n每个分身都是完整 Agent，独立进程、独立目录，适合长时间运行的子任务。",
   "firstrun.cap_desc.daemon": "派出短时并行工作者（神识）。\n比分身更轻量，适合并行处理这类活儿，例如「同时总结这十个文件」。",
   "firstrun.cap_desc.library": "技能藏经阁。\n技能是可按需加载的 Markdown 剧本，与 Claude Code 的 skills 一脉相承。",
+  "firstrun.cap_desc.soul": "内心之声 — 定期自我反省。\n空闲时自动咨询往昔之我。可在 /setup 中调节频率。",
+  "firstrun.cap_desc.system": "生命周期管理 — 入寐、唤醒、通知。\n管理器灵的进程状态与系统级操作。",
   "firstrun.addon_desc.imap": "连接任意 IMAP/SMTP 邮箱。\n为 email 功能提供账号支持（Gmail、Outlook、Fastmail 等），需要提供主机、用户名和应用专用密码。",
   "firstrun.addon_desc.telegram": "在 Telegram 上与 Agent 对话。\n通过 @BotFather 创建机器人并粘贴 token，可选限定授权用户 ID。",
   "firstrun.addon_desc.feishu": "在飞书上与 Agent 对话。\n在 open.feishu.cn/app 创建企业自建应用并粘贴凭证即可。",

@@ -89,6 +89,8 @@
   "firstrun.cap_desc.daemon": "神识 — 短时并行之役。\n较他我更轻，宜于并举之活，如「同时总十卷之要」。",
   "firstrun.cap_desc.library": "技艺之藏经阁。\n技艺者，按需而载之 markdown 剧本，与 Claude Code 之 skills 同源。",
   "firstrun.addon_desc.imap": "接任何 IMAP/SMTP 之邮箱。\n为飞鸽传书备账，适于 Gmail、Outlook、Fastmail 等；须备主机、用户名及应用专用密码。",
+  "firstrun.cap_desc.soul": "心之聲 — 定期自省。\n閒時自動諮詢往昔之我。可於 /setup 中調頻。",
+  "firstrun.cap_desc.system": "生死之管 — 入寐、喚醒、通知。\n司器靈進程之態與系統之事。",
   "firstrun.addon_desc.telegram": "于 Telegram 与器灵对话。\n经 @BotFather 造机器人并粘其 token，可选限定授权之用户 ID。",
   "firstrun.addon_desc.feishu": "于飞书与器灵对话。\n于 open.feishu.cn/app 造企业自建应用，粘其凭证即可。",
   "firstrun.addon_desc.wechat": "于微信与器灵对话。\n以手机扫码即通，不须密钥。通文字、图画、语音、影像与文牍。",

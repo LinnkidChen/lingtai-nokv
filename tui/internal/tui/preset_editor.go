@@ -1266,7 +1266,9 @@ func (m PresetEditorModel) mandatoryCapRow(name string, width int) string {
 	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 	check := subtle.Render("[✓]")
 	keyCol := subtle.Render(lipgloss.NewStyle().Width(15).Render(name))
-	val := subtle.Render("—")
+	desc := i18n.T("firstrun.cap_desc." + name)
+	desc = strings.ReplaceAll(desc, "\n", "  ")
+	val := subtle.Render(desc)
 	return "  " + check + " " + keyCol + val
 }
 
