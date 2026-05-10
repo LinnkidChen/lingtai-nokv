@@ -69,6 +69,7 @@
   "firstrun.confirm_caps": "confirm",
   "firstrun.caps_recommend": "Highly recommended to select all, especially on first run.",
   "firstrun.caps_change_later": "Use /setup and /refresh in chat to change later.",
+  "firstrun.mandatory_caps": "Always included (not toggleable)",
   "firstrun.addons_section": "Add-ons — ask the agent to help you set up after creation",
   "firstrun.caps_toggle_all": "select/deselect all",
   "firstrun.cap_desc.file": "Read, write, edit, glob, and grep files.\nThe agent's hands on your filesystem. Scoped to its working directory by default.",

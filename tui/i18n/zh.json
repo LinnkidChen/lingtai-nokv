@@ -69,6 +69,7 @@
   "firstrun.confirm_caps": "确认",
   "firstrun.caps_recommend": "强烈建议全选，尤其是首次使用。",
   "firstrun.caps_change_later": "可在聊天页用 /setup 和 /refresh 修改。",
+  "firstrun.mandatory_caps": "始终包含（不可切换）",
   "firstrun.addons_section": "扩展插件 — 创建后可让 Agent 帮你设置",
   "firstrun.caps_toggle_all": "全选/全不选",
   "firstrun.cap_desc.file": "读写、编辑、查找文件。\nAgent 在文件系统中的双手，默认限定在自己的工作目录内。",

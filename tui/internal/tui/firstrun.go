@@ -2288,6 +2288,22 @@ func (m FirstRunModel) View() string {
 		// Build the left block (grid + addon list) into a separate builder so
 		// that in wide mode we can join it horizontally with a side pane.
 		var leftBlock strings.Builder
+
+		// Mandatory capabilities — always included, not toggleable.
+		leftBlock.WriteString("  " + StyleAccent.Render(i18n.T("firstrun.mandatory_caps")) + "\n\n")
+		mandatoryCaps := []string{"email", "psyche", "codex", "library"}
+		mandatoryLine := "  "
+		for _, name := range mandatoryCaps {
+			cell := "  [✓] " + name
+			cellWidth := 38
+			visWidth := lipgloss.Width(cell)
+			if visWidth < cellWidth {
+				cell += strings.Repeat(" ", cellWidth-visWidth)
+			}
+			mandatoryLine += cell
+		}
+		leftBlock.WriteString(dimStyle.Render(mandatoryLine) + "\n\n")
+
 		for row := 0; row < colSize; row++ {
 			var line string
 			for col := 0; col < 2; col++ {

@@ -69,6 +69,7 @@
   "firstrun.confirm_caps": "確認",
   "firstrun.caps_recommend": "初入山門，宜盡選之。",
   "firstrun.caps_change_later": "后可于聊天页用 /setup 与 /refresh 改之。",
+  "firstrun.mandatory_caps": "恒含（不可易）",
   "firstrun.addons_section": "外掛 — 造后可令器灵助汝设之",
   "firstrun.caps_toggle_all": "盡選/盡去",
   "firstrun.cap_desc.file": "阅卷之器 — 读、写、改、寻、索文卷。\n器灵操持文卷之双手，默在其工作目录之内。",
