@@ -85,6 +85,8 @@ fi
 
 echo "==> Installing to $BIN_DIR ..."
 install -m 755 "$BUILD_DIR/lingtai-tui" "$BIN_DIR/lingtai-tui"
+# Create 'lingtai' alias for backward compatibility
+ln -sf "$BIN_DIR/lingtai-tui" "$BIN_DIR/lingtai"
 if [[ -f "$BUILD_DIR/lingtai-portal" ]]; then
   install -m 755 "$BUILD_DIR/lingtai-portal" "$BIN_DIR/lingtai-portal"
 fi

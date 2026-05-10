@@ -5,13 +5,15 @@ LDFLAGS := -X main.version=$(VERSION)
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/lingtai-tui .
+	@cd bin && ln -sf lingtai-tui lingtai
 
 # Fast local rebuild. The Homebrew binary at /opt/homebrew/bin/lingtai-tui is
 # already a symlink to bin/lingtai-tui, so `make dev` immediately updates the
 # installed TUI. Skips version stamp for speed; tags `dev` build.
 dev:
 	go build -ldflags "-X main.version=dev" -o bin/lingtai-tui .
-	@echo "built bin/lingtai-tui (dev) — run: lingtai-tui"
+	@cd bin && ln -sf lingtai-tui lingtai
+	@echo "built bin/lingtai-tui (dev) — run: lingtai-tui or lingtai"
 
 cross-compile:
 	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o bin/lingtai-darwin-arm64 .
