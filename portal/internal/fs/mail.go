@@ -17,7 +17,7 @@ import (
 // (`YYYYMMDDTHHMMSS-xxxx`, 20 chars, UTC) matches the kernel helper
 // `_new_mailbox_id` in `lingtai_kernel/intrinsics/email/primitives.py` so
 // mail written by either side is indistinguishable in `email(check)` output.
-// The 4-hex suffix is drawn from `uuid.NewRandom` (a v4 UUID); 16 bits of
+// The 4-hex suffix is drawn from `uuid.New` (a v4 UUID); 16 bits of
 // entropy per second is enough for human-paced sends and the WriteMail
 // collision-retry loop covers the rare burst case.
 var mailboxIDSource = func() string {
