@@ -61,8 +61,6 @@ func DefaultCommands() []Command {
 		{Name: "export", Description: "palette.export", Detail: "cmd.export"},
 		{Name: "skills", Description: "palette.skills", Detail: "cmd.skills"},
 		{Name: "insights", Description: "palette.insights", Detail: "cmd.insights"},
-		{Name: "secretary", Description: "palette.secretary", Detail: "cmd.secretary"},
-		{Name: "brief", Description: "palette.brief", Detail: "cmd.brief"},
 		{Name: "library", Description: "palette.library", Detail: "cmd.library"},
 		{Name: "system", Description: "palette.system", Detail: "cmd.system"},
 		{Name: "mailbox", Description: "palette.mailbox", Detail: "cmd.mailbox"},
