@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -49,23 +50,25 @@ func TestBuildAgentCodexEntries_ReadsFilesystemKnowledge(t *testing.T) {
 	}
 }
 
-func TestBuildAgentCodexEntries_FallsBackToLegacyCodex(t *testing.T) {
+func TestBuildAgentCodexEntries_MigratesLegacyCodexJSON(t *testing.T) {
 	agentDir := t.TempDir()
 	codexDir := filepath.Join(agentDir, "codex")
 	if err := os.MkdirAll(codexDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	codexPath := filepath.Join(codexDir, "codex.json")
 	raw, err := json.Marshal(codexFile{Entries: []codexEntry{{
-		ID:        "codex_test",
-		Title:     "Legacy entry",
-		Summary:   "old store",
-		Content:   "Legacy body.",
-		CreatedAt: "2026-05-12T21:00:00Z",
+		ID:            "codex_test",
+		Title:         "Legacy entry",
+		Summary:       "old store",
+		Content:       "Legacy body.",
+		Supplementary: "extra material",
+		CreatedAt:     "2026-05-12T21:00:00Z",
 	}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(codexDir, "codex.json"), raw, 0o644); err != nil {
+	if err := os.WriteFile(codexPath, raw, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -74,16 +77,99 @@ func TestBuildAgentCodexEntries_FallsBackToLegacyCodex(t *testing.T) {
 		t.Fatalf("got %d entries, want 1", len(entries))
 	}
 	got := entries[0]
-	if got.Label != "Legacy entry" {
-		t.Errorf("label = %q, want %q", got.Label, "Legacy entry")
+	if got.Group == "Legacy codex" {
+		t.Errorf("group should not be 'Legacy codex', got %q", got.Group)
 	}
-	if got.Group != "Legacy codex" {
-		t.Errorf("group = %q, want %q", got.Group, "Legacy codex")
+	if got.Path == "" {
+		t.Errorf("migrated entries should be filesystem-backed, got empty Path")
 	}
-	if got.Path != "" {
-		t.Errorf("legacy entries should be content-backed, got path %q", got.Path)
+	if got.Content != "" {
+		t.Errorf("migrated entries should not carry inline content, got %q", got.Content)
 	}
-	if got.Content == "" {
-		t.Fatal("legacy entry content is empty")
+	if got.Label != "legacy-entry" {
+		t.Errorf("label = %q, want slugged %q", got.Label, "legacy-entry")
+	}
+
+	if _, err := os.Stat(codexPath); !os.IsNotExist(err) {
+		t.Errorf("expected legacy codex.json removed; err=%v", err)
+	}
+	if _, err := os.Stat(codexPath + ".migrated"); err != nil {
+		t.Errorf("expected codex.json.migrated to exist: %v", err)
+	}
+
+	body, err := os.ReadFile(got.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "origin: \"migrated-codex-json\"") {
+		t.Errorf("KNOWLEDGE.md missing origin marker: %s", body)
+	}
+	if !strings.Contains(string(body), "Legacy body.") {
+		t.Errorf("KNOWLEDGE.md missing content: %s", body)
+	}
+
+	suppPath := filepath.Join(filepath.Dir(got.Path), "references", "supplementary.md")
+	if data, err := os.ReadFile(suppPath); err != nil {
+		t.Errorf("expected supplementary.md: %v", err)
+	} else if !strings.Contains(string(data), "extra material") {
+		t.Errorf("supplementary.md missing content: %s", data)
+	}
+}
+
+func TestBuildAgentCodexEntries_MigrationIsIdempotent(t *testing.T) {
+	agentDir := t.TempDir()
+	codexDir := filepath.Join(agentDir, "codex")
+	if err := os.MkdirAll(codexDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(codexFile{Entries: []codexEntry{
+		{ID: "a", Title: "First", Content: "one", CreatedAt: "2026-05-12T21:00:00Z"},
+		{ID: "b", Title: "Second", Content: "two", CreatedAt: "2026-05-12T22:00:00Z"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(codexDir, "codex.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	first := buildAgentCodexEntries(agentDir)
+	second := buildAgentCodexEntries(agentDir)
+	if len(first) != 2 || len(second) != 2 {
+		t.Fatalf("expected 2 entries on both runs, got %d then %d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i].Path != second[i].Path {
+			t.Errorf("entry %d path drifted: %q vs %q", i, first[i].Path, second[i].Path)
+		}
+	}
+}
+
+func TestBuildAgentCodexEntries_MigratesLegacyKnowledgeJSON(t *testing.T) {
+	agentDir := t.TempDir()
+	knowledgeDir := filepath.Join(agentDir, "knowledge")
+	if err := os.MkdirAll(knowledgeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(codexFile{Entries: []codexEntry{{
+		ID: "k1", Title: "From knowledge.json", Summary: "summary", Content: "body",
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(knowledgeDir, "knowledge.json")
+	if err := os.WriteFile(legacy, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := buildAgentCodexEntries(agentDir)
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+	if entries[0].Group == "Legacy codex" {
+		t.Errorf("group should not be legacy fallback, got %q", entries[0].Group)
+	}
+	if _, err := os.Stat(legacy + ".migrated"); err != nil {
+		t.Errorf("expected knowledge.json.migrated: %v", err)
 	}
 }

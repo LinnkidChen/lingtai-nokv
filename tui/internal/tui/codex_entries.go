@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
-	"time"
 )
 
 // codexFile matches the legacy storage schema at codex/codex.json written by
-// older agents. New agents use knowledge/<name>/KNOWLEDGE.md folders; the JSON
-// reader remains as a display fallback for workdirs that have not booted on the
-// migrating kernel yet.
+// older agents. New agents use knowledge/<name>/KNOWLEDGE.md folders. The TUI
+// now performs a one-time migration from this JSON store into the folder
+// layout on first scan, mirroring the kernel's migration semantics.
 type codexFile struct {
 	Version int          `json:"version"`
 	Entries []codexEntry `json:"entries"`
@@ -29,17 +29,16 @@ type codexEntry struct {
 }
 
 // buildAgentCodexEntries returns the private knowledge entries for a single
-// agent. The canonical source is <agent>/knowledge/**/KNOWLEDGE.md. If no
-// filesystem-backed entries exist, it falls back to legacy codex/codex.json so
-// the TUI can still display older agents before they refresh and migrate.
+// agent. Before scanning the canonical knowledge/ folder it runs a one-time
+// migration from legacy JSON stores (codex/codex.json and knowledge/knowledge.json)
+// so /knowledge consistently shows filesystem-backed entries instead of a
+// legacy fallback group.
 func buildAgentCodexEntries(agentDir string) []MarkdownEntry {
 	if agentDir == "" {
 		return nil
 	}
-	if entries := buildAgentKnowledgeEntries(agentDir); len(entries) > 0 {
-		return entries
-	}
-	return buildLegacyCodexEntries(agentDir)
+	migrateLegacyJSONStores(agentDir)
+	return buildAgentKnowledgeEntries(agentDir)
 }
 
 type knowledgeEntry struct {
@@ -134,57 +133,171 @@ func cleanFrontmatterScalar(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func buildLegacyCodexEntries(agentDir string) []MarkdownEntry {
-	codexPath := filepath.Join(agentDir, "codex", "codex.json")
-	data, err := os.ReadFile(codexPath)
+// migrateLegacyJSONStores performs a one-time migration from legacy JSON
+// stores into knowledge/<slug>/KNOWLEDGE.md folders. After a successful
+// migration the source JSON is renamed to <name>.migrated (with a numeric
+// suffix if that already exists) so the migration does not repeat.
+func migrateLegacyJSONStores(agentDir string) {
+	knowledgeDir := filepath.Join(agentDir, "knowledge")
+	migrateOneLegacyJSON(knowledgeDir, filepath.Join(knowledgeDir, "knowledge.json"), "migrated-knowledge-json")
+	migrateOneLegacyJSON(knowledgeDir, filepath.Join(agentDir, "codex", "codex.json"), "migrated-codex-json")
+}
+
+func migrateOneLegacyJSON(knowledgeDir, legacyPath, origin string) {
+	info, err := os.Stat(legacyPath)
+	if err != nil || info.IsDir() {
+		return
+	}
+	data, err := os.ReadFile(legacyPath)
 	if err != nil {
-		return nil
+		return
 	}
 	var cdx codexFile
-	if json.Unmarshal(data, &cdx) != nil || len(cdx.Entries) == 0 {
-		return nil
+	if err := json.Unmarshal(data, &cdx); err != nil {
+		return
+	}
+	if len(cdx.Entries) == 0 {
+		return
 	}
 
-	entries := make([]codexEntry, len(cdx.Entries))
-	copy(entries, cdx.Entries)
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].CreatedAt > entries[j].CreatedAt
-	})
+	migrated := 0
+	for idx, le := range cdx.Entries {
+		legacyID := strings.TrimSpace(le.ID)
+		if legacyID == "" {
+			legacyID = fmt.Sprintf("%d", idx+1)
+		}
+		title := strings.TrimSpace(le.Title)
+		if title == "" {
+			title = strings.TrimSpace(le.Content)
+		}
+		if title == "" {
+			title = fmt.Sprintf("Entry %d", idx+1)
+		}
+		summary := strings.TrimSpace(le.Summary)
+		if summary == "" {
+			summary = title
+		}
+		if summary == "" {
+			summary = strings.TrimSpace(le.Content)
+		}
+		if summary == "" {
+			summary = "Migrated knowledge entry"
+		}
+		content := strings.TrimSpace(le.Content)
+		supplementary := strings.TrimSpace(le.Supplementary)
+		createdAt := strings.TrimSpace(le.CreatedAt)
 
-	result := make([]MarkdownEntry, 0, len(entries))
-	for _, le := range entries {
-		label := le.Title
-		if label == "" {
-			label = le.ID
+		entryDir, name := uniqueEntryDir(knowledgeDir, title, legacyID)
+		md := formatKnowledgeMD(name, title, summary, content, supplementary, legacyID, createdAt, origin)
+		if err := os.MkdirAll(entryDir, 0o755); err != nil {
+			continue
 		}
-		if len(label) > 30 {
-			label = label[:27] + "..."
+		if err := os.WriteFile(filepath.Join(entryDir, "KNOWLEDGE.md"), []byte(md), 0o644); err != nil {
+			continue
 		}
-
-		var md strings.Builder
-		md.WriteString("# " + le.Title + "\n\n")
-		if le.Summary != "" {
-			md.WriteString("> " + le.Summary + "\n\n")
-		}
-		if le.CreatedAt != "" {
-			if t, err := time.Parse(time.RFC3339Nano, le.CreatedAt); err == nil {
-				md.WriteString(fmt.Sprintf("*%s* · `%s`\n\n", t.Format("2006-01-02 15:04"), le.ID))
-			} else {
-				md.WriteString(fmt.Sprintf("`%s`\n\n", le.ID))
+		if supplementary != "" {
+			refsDir := filepath.Join(entryDir, "references")
+			if err := os.MkdirAll(refsDir, 0o755); err == nil {
+				_ = os.WriteFile(filepath.Join(refsDir, "supplementary.md"), []byte(supplementary+"\n"), 0o644)
 			}
 		}
-		md.WriteString("---\n\n")
-		md.WriteString(le.Content)
-		if le.Supplementary != "" {
-			md.WriteString("\n\n---\n\n## Supplementary\n\n" + le.Supplementary)
-		}
-
-		result = append(result, MarkdownEntry{
-			Label:   label,
-			Group:   "Legacy codex",
-			Content: md.String(),
-		})
+		migrated++
 	}
 
-	return result
+	if migrated == 0 {
+		return
+	}
+	backup := legacyPath + ".migrated"
+	if _, err := os.Stat(backup); err == nil {
+		n := 2
+		for {
+			candidate := fmt.Sprintf("%s.migrated.%d", legacyPath, n)
+			if _, err := os.Stat(candidate); os.IsNotExist(err) {
+				backup = candidate
+				break
+			}
+			n++
+		}
+	}
+	_ = os.Rename(legacyPath, backup)
+}
+
+var slugRE = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(value, fallback string) string {
+	base := strings.ToLower(strings.TrimSpace(value))
+	if base == "" {
+		base = fallback
+	}
+	base = slugRE.ReplaceAllString(base, "-")
+	base = strings.Trim(base, ".-_")
+	if base == "" {
+		base = fallback
+	}
+	if len(base) > 64 {
+		base = base[:64]
+	}
+	base = strings.Trim(base, ".-_")
+	if base == "" {
+		base = fallback
+	}
+	return base
+}
+
+func uniqueEntryDir(root, preferred, legacyID string) (string, string) {
+	slug := slugify(preferred, slugify(legacyID, "entry"))
+	candidate := filepath.Join(root, slug)
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return candidate, slug
+	}
+	suffixBase := slugify(legacyID, "entry")
+	combined := slug + "-" + suffixBase
+	candidate = filepath.Join(root, combined)
+	if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		return candidate, combined
+	}
+	for i := 2; ; i++ {
+		name := fmt.Sprintf("%s-%s-%d", slug, suffixBase, i)
+		candidate = filepath.Join(root, name)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate, name
+		}
+	}
+}
+
+func yamlQuote(value string) string {
+	b, _ := json.Marshal(value)
+	return string(b)
+}
+
+func formatKnowledgeMD(name, title, description, content, supplementary, legacyID, createdAt, origin string) string {
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("name: " + yamlQuote(name) + "\n")
+	b.WriteString("description: " + yamlQuote(description) + "\n")
+	b.WriteString("version: \"1.0.0\"\n")
+	b.WriteString("origin: " + yamlQuote(origin) + "\n")
+	if legacyID != "" {
+		b.WriteString("legacy_id: " + yamlQuote(legacyID) + "\n")
+	}
+	if title != "" {
+		b.WriteString("title: " + yamlQuote(title) + "\n")
+	}
+	if createdAt != "" {
+		b.WriteString("created_at: " + yamlQuote(createdAt) + "\n")
+	}
+	b.WriteString("---\n\n")
+	if title != "" {
+		b.WriteString("# " + title + "\n\n")
+	}
+	if content != "" {
+		b.WriteString(strings.TrimRight(content, "\n") + "\n\n")
+	} else {
+		b.WriteString(description + "\n\n")
+	}
+	if supplementary != "" {
+		b.WriteString("## References\n\n")
+		b.WriteString("- [Migrated supplementary material](references/supplementary.md)\n\n")
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
 }
