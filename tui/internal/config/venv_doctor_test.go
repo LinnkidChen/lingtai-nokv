@@ -138,6 +138,16 @@ func TestEnsureRuntimeSkipsUpgradeWhenEnsureFails(t *testing.T) {
 	}
 }
 
+func TestExecCommandRunnerCapturesOutputAfterRun(t *testing.T) {
+	result := (execCommandRunner{}).Run("sh", "-c", "printf stdout-text; printf stderr-text >&2")
+	if result.Err != nil {
+		t.Fatalf("command failed: %v", result.Err)
+	}
+	if result.Stdout != "stdout-text" || result.Stderr != "stderr-text" {
+		t.Fatalf("runner did not capture command output after Run: stdout=%q stderr=%q", result.Stdout, result.Stderr)
+	}
+}
+
 func TestUpgradePythonRuntimeReportsCommandFailure(t *testing.T) {
 	runner := &fakeRunner{versions: []string{"0.9.6"}, failPip: true}
 	result := UpgradePythonRuntime(t.TempDir(), true, &UpgradeRuntimeOptions{
@@ -173,6 +183,26 @@ func TestUpgradePythonRuntimeVerifiesPostInstallVersion(t *testing.T) {
 	}
 	if !containsLine(result.Lines, "after upgrade: 0.9.7") {
 		t.Fatalf("expected post-upgrade version line: %+v", result.Lines)
+	}
+}
+
+func TestReleaseNewerUsesSemanticOrdering(t *testing.T) {
+	cases := []struct {
+		current string
+		latest  string
+		want    bool
+	}{
+		{current: "v0.8.1", latest: "v0.8.2", want: true},
+		{current: "v0.8.2", latest: "v0.8.2", want: false},
+		{current: "v0.8.3", latest: "v0.8.2", want: false},
+		{current: "0.8.9", latest: "v0.8.10", want: true},
+		{current: "dev", latest: "v0.8.2", want: false},
+		{current: "v0.8.3", latest: "", want: false},
+	}
+	for _, tc := range cases {
+		if got := releaseNewer(tc.current, tc.latest); got != tc.want {
+			t.Fatalf("releaseNewer(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
+		}
 	}
 }
 

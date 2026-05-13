@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -417,7 +418,8 @@ func (execCommandRunner) Run(name string, args ...string) CommandResult {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	return CommandResult{Stdout: stdout.String(), Stderr: stderr.String(), Err: cmd.Run()}
+	err := cmd.Run()
+	return CommandResult{Stdout: stdout.String(), Stderr: stderr.String(), Err: err}
 }
 
 // RunDoctorUpdate force-checks and repairs the two shipped update surfaces:
@@ -575,9 +577,37 @@ func releaseNewer(currentVersion, latestTag string) bool {
 	if currentVersion == "" || currentVersion == "dev" || strings.Contains(currentVersion, "-") || latestTag == "" {
 		return false
 	}
-	latest := strings.TrimPrefix(latestTag, "v")
-	current := strings.TrimPrefix(currentVersion, "v")
-	return latest != current
+	latest := parseReleaseVersion(latestTag)
+	current := parseReleaseVersion(currentVersion)
+	if latest == nil || current == nil {
+		return false
+	}
+	for i := range latest {
+		if latest[i] != current[i] {
+			return latest[i] > current[i]
+		}
+	}
+	return false
+}
+
+func parseReleaseVersion(version string) []int {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	if version == "" || strings.Contains(version, "-") {
+		return nil
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return nil
+	}
+	parsed := make([]int, len(parts))
+	for i, part := range parts {
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return nil
+		}
+		parsed[i] = value
+	}
+	return parsed
 }
 
 // UpgradeRuntimeOptions injects side effects for tests.
