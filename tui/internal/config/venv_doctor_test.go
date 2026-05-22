@@ -12,14 +12,24 @@ import (
 )
 
 type fakeRunner struct {
-	versions []string
-	failPip  bool
-	calls    []string
+	versions       []string
+	failPip        bool
+	editableSource string // when non-empty, the editable-detect probe reports EDITABLE <source>
+	calls          []string
 }
 
 func (r *fakeRunner) Run(name string, args ...string) CommandResult {
 	call := name + " " + strings.Join(args, " ")
 	r.calls = append(r.calls, call)
+	if strings.Contains(call, "direct_url.json") {
+		// Editable-install probe (isEditableLingtaiInstall). Default response
+		// is "WHEEL" — matching the conservative no-skip default for existing
+		// tests that did not exercise this path.
+		if r.editableSource != "" {
+			return CommandResult{Stdout: "EDITABLE " + r.editableSource + "\n"}
+		}
+		return CommandResult{Stdout: "WHEEL\n"}
+	}
 	if strings.Contains(call, "import lingtai") {
 		if len(r.versions) == 0 {
 			return CommandResult{Err: errors.New("no version queued"), Stderr: "ModuleNotFoundError: lingtai"}
@@ -183,6 +193,57 @@ func TestUpgradePythonRuntimeVerifiesPostInstallVersion(t *testing.T) {
 	}
 	if !containsLine(result.Lines, "after upgrade: 0.9.7") {
 		t.Fatalf("expected post-upgrade version line: %+v", result.Lines)
+	}
+}
+
+func TestUpgradePythonRuntimeSkipsEditableInstall(t *testing.T) {
+	// Editable installs (pip/uv -e) must be left alone — running pip install
+	// --upgrade would silently clobber the dev source checkout. The check
+	// must skip BOTH the PyPI fetch and the install command.
+	runner := &fakeRunner{
+		versions:       []string{"0.10.6"},
+		editableSource: "file:///Users/dev/lingtai-kernel",
+	}
+	result := UpgradePythonRuntime(t.TempDir(), false, &UpgradeRuntimeOptions{
+		HTTPClient: testVersionClient(t, "0.10.7", "v0.8.1"),
+		Runner:     runner,
+		LookPath:   func(string) (string, error) { return "/usr/bin/uv", nil },
+		Stat:       statAllExist,
+	})
+	if !result.Healthy {
+		t.Fatalf("editable install must remain Healthy: %+v", result.Lines)
+	}
+	if result.Updated {
+		t.Fatalf("editable install must not report Updated")
+	}
+	if !containsLine(result.Lines, "editable install") {
+		t.Fatalf("expected editable-install info line: %+v", result.Lines)
+	}
+	if containsCall(runner.calls, "pip install --upgrade lingtai") {
+		t.Fatalf("editable install must not trigger pip upgrade: %#v", runner.calls)
+	}
+}
+
+func TestUpgradePythonRuntimeForceRespectsEditableInstall(t *testing.T) {
+	// Even force=true (doctor's repair path) must not clobber an editable
+	// install — a forced wheel reinstall is more destructive than the broken
+	// state it was trying to fix, and the user can always re-create dev mode
+	// with `uv pip install -e`.
+	runner := &fakeRunner{
+		versions:       []string{"0.10.6"},
+		editableSource: "file:///Users/dev/lingtai-kernel",
+	}
+	result := UpgradePythonRuntime(t.TempDir(), true, &UpgradeRuntimeOptions{
+		HTTPClient: testVersionClient(t, "0.10.7", "v0.8.1"),
+		Runner:     runner,
+		LookPath:   func(string) (string, error) { return "/usr/bin/uv", nil },
+		Stat:       statAllExist,
+	})
+	if result.Updated {
+		t.Fatalf("forced editable upgrade must not report Updated")
+	}
+	if containsCall(runner.calls, "pip install --upgrade lingtai") {
+		t.Fatalf("forced editable must not trigger pip upgrade: %#v", runner.calls)
 	}
 }
 

@@ -664,6 +664,23 @@ func UpgradePythonRuntime(globalDir string, force bool, opts *UpgradeRuntimeOpti
 	}
 	result.add(DoctorInfo, "Installed Python lingtai: %s", installed)
 
+	// Dev-mode gate: when lingtai was installed editable (pip/uv -e), leave it
+	// alone. A PyPI wheel reinstall would silently clobber the editable link
+	// and undo the user's local source checkout — the symptom CLAUDE.md
+	// "Auto-upgrader can clobber the editable install" warns about. The doctor
+	// path (force=true) also respects this: a forced repair that nukes a dev
+	// setup is more destructive than the broken state it was trying to fix,
+	// and the user can always re-create dev mode explicitly with `uv pip
+	// install -e`.
+	if editable, editableSource := isEditableLingtaiInstall(opts.Runner, python); editable {
+		if editableSource != "" {
+			result.add(DoctorOK, "Python lingtai is an editable install (%s); skipping upgrade", editableSource)
+		} else {
+			result.add(DoctorOK, "Python lingtai is an editable install; skipping upgrade")
+		}
+		return result
+	}
+
 	latest, err := fetchLatestPyPIVersion(opts.HTTPClient)
 	if err != nil {
 		result.add(DoctorWarn, "Could not check latest Python lingtai on PyPI: %v", err)
@@ -742,6 +759,43 @@ func pythonLingtaiVersion(runner CommandRunner, python string) (string, error) {
 		return "", fmt.Errorf("%s", lastNonEmptyLine(detail))
 	}
 	return strings.TrimSpace(res.Stdout), nil
+}
+
+// isEditableLingtaiInstall reports whether the lingtai distribution in the
+// given Python interpreter was installed in editable mode (pip/uv -e ...).
+// Detection follows PEP 610: the install records a ``direct_url.json`` file
+// inside the package's .dist-info/ directory; editable installs set
+// ``dir_info.editable: true``. The second return is the editable source path
+// (e.g. ``file:///Users/.../lingtai-kernel``) if available, for the log line.
+// Returns (false, "") on any error so a missing or malformed direct_url is
+// treated as "regular wheel install" — the conservative default that lets the
+// upgrade proceed.
+func isEditableLingtaiInstall(runner CommandRunner, python string) (bool, string) {
+	const detect = `
+import sys
+try:
+    from importlib.metadata import distribution
+    d = distribution("lingtai")
+    raw = d.read_text("direct_url.json") or ""
+    import json
+    info = json.loads(raw)
+    if info.get("dir_info", {}).get("editable") is True:
+        print("EDITABLE", info.get("url", ""))
+    else:
+        print("WHEEL")
+except Exception:
+    print("WHEEL")
+`
+	res := runner.Run(python, "-c", detect)
+	if res.Err != nil {
+		return false, ""
+	}
+	out := strings.TrimSpace(res.Stdout)
+	if !strings.HasPrefix(out, "EDITABLE") {
+		return false, ""
+	}
+	source := strings.TrimSpace(strings.TrimPrefix(out, "EDITABLE"))
+	return true, source
 }
 
 func runtimeUpgradeCommand(globalDir, python string, lookPath func(string) (string, error)) (string, []string) {
