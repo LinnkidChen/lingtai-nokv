@@ -125,3 +125,64 @@ func TestBuildMailboxEntries_ScansSentFolder(t *testing.T) {
 		t.Errorf("label = %q, want to contain %q", entries[0].Label, "Re: hello")
 	}
 }
+
+// TestBuildMailboxEntries_DateRendersInLocalTime verifies that a UTC
+// received_at on disk is rendered in the viewer's local timezone with a
+// timezone abbreviation appended, rather than as raw UTC. Regression guard
+// for issue Lingtai-AI/lingtai#132 where mailbox display showed bare UTC
+// despite local-time metadata being available.
+func TestBuildMailboxEntries_DateRendersInLocalTime(t *testing.T) {
+	dir := t.TempDir()
+	inbox := filepath.Join(dir, "mailbox", "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	msgDir := filepath.Join(inbox, "20260520T225827-abcd")
+	if err := os.MkdirAll(msgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Use a fixed UTC instant matching the issue's reproduction.
+	utcStamp := "2026-05-20T22:58:27Z"
+	utcTime, err := time.Parse(time.RFC3339, utcStamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, _ := json.Marshal(map[string]any{
+		"from":        "human",
+		"to":          []string{"deepseek-1"},
+		"subject":     "issue report",
+		"message":     "email显示时间依然是utc而不是local时间",
+		"received_at": utcStamp,
+	})
+	if err := os.WriteFile(filepath.Join(msgDir, "message.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries := buildMailboxEntries(dir)
+	if len(entries) != 1 {
+		t.Fatalf("got %d entries, want 1", len(entries))
+	}
+
+	// Expected: local-time render with timezone abbreviation. In any zone
+	// other than UTC, the rendered "HH:MM" differs from the raw "22:58".
+	// In UTC the wall-clock matches but the abbreviation is still "UTC",
+	// so the assertion holds across timezones.
+	wantDate := utcTime.Local().Format("2006-01-02 15:04 MST")
+	wantLine := "**Date:** " + wantDate
+	if !strings.Contains(entries[0].Content, wantLine) {
+		t.Errorf("content missing localized Date line %q\n--- content ---\n%s", wantLine, entries[0].Content)
+	}
+
+	// Guard against the old format (raw UTC, no timezone) sneaking back.
+	utcOnly := "**Date:** " + utcTime.Format("2006-01-02 15:04") + "\n"
+	if strings.Contains(entries[0].Content, utcOnly) {
+		// Only a real regression if local rendering would actually differ
+		// from the raw UTC string — i.e. either the wall-clock changes
+		// or the zone abbreviation isn't already attached.
+		if wantDate != utcTime.Format("2006-01-02 15:04") {
+			t.Errorf("content still shows raw UTC date without timezone:\n%s", entries[0].Content)
+		}
+	}
+}
