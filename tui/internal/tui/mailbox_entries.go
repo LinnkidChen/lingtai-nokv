@@ -127,7 +127,7 @@ func buildMailboxEntries(agentDir string) []MarkdownEntry {
 			// Build label: "MM-DD <subject-or-fallback> 📎"
 			dateStr := ""
 			if !m.Time.IsZero() {
-				dateStr = m.Time.Format("01-02") + " "
+				dateStr = m.Time.Local().Format("01-02") + " "
 			}
 			attIcon := ""
 			if len(m.Attachments) > 0 {
@@ -159,7 +159,7 @@ func buildMailboxEntries(agentDir string) []MarkdownEntry {
 				md.WriteString(fmt.Sprintf("**To:** %s  \n", m.To))
 			}
 			if !m.Time.IsZero() {
-				md.WriteString(fmt.Sprintf("**Date:** %s\n", m.Time.Format("2006-01-02 15:04")))
+				md.WriteString(fmt.Sprintf("**Date:** %s\n", m.Time.Local().Format("2006-01-02 15:04 MST")))
 			}
 			md.WriteString("\n---\n\n")
 			md.WriteString(m.Body)
