@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/anthropics/lingtai-tui/i18n"
 	"github.com/anthropics/lingtai-tui/internal/preset"
 )
 
@@ -97,6 +98,67 @@ func TestPresetEditorShortTerminalDoesNotWrapRowsPastHeight(t *testing.T) {
 		if got := renderedLineCount(view); got > size.height {
 			t.Fatalf("%dx%d view must fit terminal height, got %d lines; view:\n%s", size.width, size.height, got, view)
 		}
+	}
+}
+
+// TestPresetEditorAPIKeyLockedWhenAlreadyStored verifies that opening the
+// editor on a preset whose api_key_env slot already holds a value blocks
+// inline edit of the api_key row. Users were confused when the masked row
+// silently overwrote the stored key on commit. New presets (empty
+// existingKeys) must still be editable — covered by the next test.
+func TestPresetEditorAPIKeyLockedWhenAlreadyStored(t *testing.T) {
+	keys := map[string]string{"MINIMAX_API_KEY": "sk-existing-value"}
+	m := NewPresetEditorModelWithBuiltinFlag(testPresetEditorPreset(), "en", keys, "", false)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	if !m.apiKeyLocked {
+		t.Fatalf("expected apiKeyLocked=true when preset opens with stored key")
+	}
+
+	// Walk cursor to feAPIKey (index 9 in editorFieldOrder).
+	for i := 0; i < 9; i++ {
+		m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if editorFieldOrder[m.cursor] != feAPIKey {
+		t.Fatalf("expected cursor on feAPIKey, got %v", editorFieldOrder[m.cursor])
+	}
+
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if m.mode != emBrowse {
+		t.Fatalf("expected to stay in browse mode after Enter on locked api_key, got mode=%v", m.mode)
+	}
+	if m.saveErr == "" {
+		t.Fatalf("expected a saveErr message explaining the lock; got empty")
+	}
+	want := i18n.T("preset_editor.api_key_locked")
+	if m.saveErr != want {
+		t.Fatalf("expected lock message %q; got %q", want, m.saveErr)
+	}
+}
+
+// TestPresetEditorAPIKeyEditableWhenNoStoredKey is the inverse: a preset
+// with no stored key (typical for first-run flow on a fresh template)
+// must still allow inline edit so initial setup works.
+func TestPresetEditorAPIKeyEditableWhenNoStoredKey(t *testing.T) {
+	m := NewPresetEditorModelWithBuiltinFlag(testPresetEditorPreset(), "en", nil, "", false)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	if m.apiKeyLocked {
+		t.Fatalf("expected apiKeyLocked=false when no stored key")
+	}
+
+	for i := 0; i < 9; i++ {
+		m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if editorFieldOrder[m.cursor] != feAPIKey {
+		t.Fatalf("expected cursor on feAPIKey, got %v", editorFieldOrder[m.cursor])
+	}
+
+	m, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if m.mode != emInline {
+		t.Fatalf("expected emInline after Enter on editable api_key, got mode=%v", m.mode)
 	}
 }
 
