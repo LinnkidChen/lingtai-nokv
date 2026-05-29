@@ -52,7 +52,10 @@ func NeedsVenv(globalDir string) bool {
 	if _, err := os.Stat(python); err != nil {
 		return true
 	}
-	// Venv exists — verify lingtai is importable
+	// Venv exists — verify lingtai is importable. A working PyPI install may
+	// still need conversion to local dev/editable mode; that is handled by the
+	// always-run CheckUpgrade/UpgradePythonRuntime path after this check, not by
+	// recreating the whole venv here.
 	if err := exec.Command(python, "-c", "import lingtai").Run(); err != nil {
 		return true
 	}
@@ -116,19 +119,14 @@ func ensureVenv(globalDir string, quiet bool, progress ProgressFunc) error {
 	// Step 2: install lingtai
 	progress("welcome.step_install")
 	home, _ := os.UserHomeDir()
-	kernelSrc := filepath.Join(home, "Documents", "GitHub", "lingtai-kernel")
-	lingtaiSrc := filepath.Join(home, "Documents", "GitHub", "lingtai")
-	_, hasKernel := os.Stat(filepath.Join(kernelSrc, "pyproject.toml"))
-	_, hasLingtai := os.Stat(filepath.Join(lingtaiSrc, "pyproject.toml"))
-	devMode := hasKernel == nil && hasLingtai == nil
+	dev, devMode := findDevCheckouts(home, nil)
 
 	var install *exec.Cmd
-	if uvCmd != "" {
-		if devMode {
-			install = exec.Command(uvCmd, "pip", "install", "-e", kernelSrc, "-e", lingtaiSrc, "-p", venvPath)
-		} else {
-			install = exec.Command(uvCmd, "pip", "install", "lingtai", "-p", venvPath)
-		}
+	if devMode {
+		name, args := devEditableInstallCommand(globalDir, venvPython, dev, exec.LookPath)
+		install = exec.Command(name, args...)
+	} else if uvCmd != "" {
+		install = exec.Command(uvCmd, "pip", "install", "lingtai", "-p", venvPath)
 	} else {
 		var pipCmd string
 		if runtime.GOOS == "windows" {
@@ -136,11 +134,7 @@ func ensureVenv(globalDir string, quiet bool, progress ProgressFunc) error {
 		} else {
 			pipCmd = filepath.Join(venvPath, "bin", "pip")
 		}
-		if devMode {
-			install = exec.Command(pipCmd, "install", "-e", kernelSrc, "-e", lingtaiSrc)
-		} else {
-			install = exec.Command(pipCmd, "install", "lingtai")
-		}
+		install = exec.Command(pipCmd, "install", "lingtai")
 	}
 	if !quiet {
 		install.Stdout = os.Stdout
@@ -399,6 +393,10 @@ type DoctorOptions struct {
 	Readlink       func(string) (string, error)
 	Stat           func(string) (os.FileInfo, error)
 	EnsureVenvFunc func(string) error
+	// Home / LookupEnv override dev-checkout discovery. Production callers
+	// leave them empty/nil (os.UserHomeDir / os.LookupEnv are used).
+	Home      string
+	LookupEnv func(string) (string, bool)
 }
 
 // CommandRunner is the minimal exec abstraction used by forced update code.
@@ -539,6 +537,8 @@ func (r *DoctorReport) checkPythonRuntime(globalDir string, opts DoctorOptions) 
 		Runner:     opts.Runner,
 		LookPath:   opts.LookPath,
 		Stat:       opts.Stat,
+		Home:       opts.Home,
+		LookupEnv:  opts.LookupEnv,
 	})
 	for _, line := range upgrade.Lines {
 		r.add(line.Severity, "%s", line.Text)
@@ -720,6 +720,13 @@ type UpgradeRuntimeOptions struct {
 	Runner     CommandRunner
 	LookPath   func(string) (string, error)
 	Stat       func(string) (os.FileInfo, error)
+
+	// Home overrides the home directory used to discover local dev checkouts.
+	// Production callers leave it empty (os.UserHomeDir is used).
+	Home string
+	// LookupEnv overrides environment lookups (LINGTAI_DEV_ROOT). Production
+	// callers leave it nil (os.LookupEnv is used).
+	LookupEnv func(string) (string, bool)
 }
 
 type UpgradeRuntimeResult struct {
@@ -767,6 +774,44 @@ func UpgradePythonRuntime(globalDir string, force bool, opts *UpgradeRuntimeOpti
 		return result
 	}
 	result.add(DoctorInfo, "Installed Python lingtai: %s", installed)
+
+	// Dev-checkout conversion: on a machine with local lingtai-kernel/lingtai
+	// source, the managed runtime should track that source via an editable
+	// install, not the PyPI wheel. This runs BEFORE the generic editable gate
+	// below so that a working PyPI install (or an editable install pointed at a
+	// stale/moved checkout) is reinstalled editable against the local source.
+	// When the runtime is already editable for the discovered checkout, it is
+	// left untouched so this does not reinstall on every launch.
+	home := opts.Home
+	if home == "" {
+		home, _ = os.UserHomeDir()
+	}
+	if home != "" {
+		if dev, ok := findDevCheckouts(home, opts.LookupEnv); ok {
+			editable, source := isEditableLingtaiInstall(opts.Runner, python)
+			if editable && dev.isEditableForKernel(source) {
+				result.add(DoctorOK, "Python lingtai already editable for local dev checkout (%s); skipping reinstall", dev.KernelSrc)
+				return result
+			}
+			result.add(DoctorInfo, "Local dev checkout detected at %s; installing lingtai editable to replace the %s runtime",
+				dev.KernelSrc, devRuntimeKind(editable))
+			argsName, args := devEditableInstallCommand(globalDir, python, dev, opts.LookPath)
+			result.add(DoctorInfo, "Running: %s %s", argsName, strings.Join(args, " "))
+			cmdResult := opts.Runner.Run(argsName, args...)
+			appendCommandOutputToRuntime(&result, cmdResult)
+			if cmdResult.Err != nil {
+				result.add(DoctorFail, "Editable dev install failed: %v", cmdResult.Err)
+				return result
+			}
+			if _, err := pythonLingtaiVersion(opts.Runner, python); err != nil {
+				result.add(DoctorFail, "lingtai import failed after editable dev install: %v", err)
+				return result
+			}
+			result.Updated = true
+			result.add(DoctorOK, "Python lingtai runtime switched to editable dev install")
+			return result
+		}
+	}
 
 	// Dev-mode gate: when lingtai was installed editable (pip/uv -e), leave it
 	// alone. A PyPI wheel reinstall would silently clobber the editable link
@@ -911,6 +956,40 @@ func runtimeUpgradeCommand(globalDir, python string, lookPath func(string) (stri
 		pipCmd = filepath.Join(filepath.Dir(python), "pip.exe")
 	}
 	return pipCmd, []string{"install", "--upgrade", "lingtai"}
+}
+
+// devRuntimeKind labels the runtime being replaced, for the log line.
+func devRuntimeKind(editable bool) string {
+	if editable {
+		return "stale editable"
+	}
+	return "PyPI wheel"
+}
+
+// devEditableInstallCommand builds the `pip install -e <kernel>` invocation
+// that replaces the current runtime install with one tracking the local
+// checkout. Prefers uv (with -p <venv>) and falls back to the venv's pip.
+// Only the kernel is installed editable — it is the source of the `lingtai`
+// package; the sibling lingtai/ TUI repo is not a Python package.
+func devEditableInstallCommand(globalDir, python string, dev devCheckout, lookPath func(string) (string, error)) (string, []string) {
+	targets := dev.installTargets()
+	if uv, err := lookPath("uv"); err == nil && uv != "" {
+		args := []string{"pip", "install"}
+		for _, t := range targets {
+			args = append(args, "-e", t)
+		}
+		args = append(args, "-p", RuntimeVenvDir(globalDir))
+		return uv, args
+	}
+	pipCmd := filepath.Join(filepath.Dir(python), "pip")
+	if runtime.GOOS == "windows" {
+		pipCmd = filepath.Join(filepath.Dir(python), "pip.exe")
+	}
+	args := []string{"install"}
+	for _, t := range targets {
+		args = append(args, "-e", t)
+	}
+	return pipCmd, args
 }
 
 func appendCommandOutput(r *DoctorReport, res CommandResult) {

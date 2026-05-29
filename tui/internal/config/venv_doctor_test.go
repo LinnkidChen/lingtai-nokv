@@ -93,6 +93,15 @@ func statAllExist(string) (os.FileInfo, error) {
 	return fakeFileInfo{}, nil
 }
 
+// noDevHome returns an empty home dir and a no-op env lookup so tests that
+// exercise the non-dev (PyPI/editable-skip) paths do not pick up the running
+// developer's real ~/work/GitHub checkouts. Threaded into UpgradeRuntimeOptions
+// / DoctorOptions via Home + LookupEnv.
+func noDevHome(t *testing.T) (string, func(string) (string, bool)) {
+	t.Helper()
+	return t.TempDir(), func(string) (string, bool) { return "", false }
+}
+
 type fakeFileInfo struct{ os.FileInfo }
 
 func TestEnsureRuntimeChecksUpgradeAfterCreatingVenv(t *testing.T) {
@@ -178,11 +187,14 @@ func TestExecCommandRunnerCapturesOutputAfterRun(t *testing.T) {
 
 func TestUpgradePythonRuntimeReportsCommandFailure(t *testing.T) {
 	runner := &fakeRunner{versions: []string{"0.9.6"}, failPip: true}
+	home, env := noDevHome(t)
 	result := UpgradePythonRuntime(t.TempDir(), true, &UpgradeRuntimeOptions{
 		HTTPClient: testVersionClient(t, "0.9.7", "v0.8.1"),
 		Runner:     runner,
 		LookPath:   func(string) (string, error) { return "/usr/bin/uv", nil },
 		Stat:       statAllExist,
+		Home:       home,
+		LookupEnv:  env,
 	})
 	if result.Healthy {
 		t.Fatalf("expected unhealthy result on pip failure: %+v", result.Lines)
@@ -197,11 +209,14 @@ func TestUpgradePythonRuntimeReportsCommandFailure(t *testing.T) {
 
 func TestUpgradePythonRuntimeVerifiesPostInstallVersion(t *testing.T) {
 	runner := &fakeRunner{versions: []string{"0.9.6", "0.9.7"}}
+	home, env := noDevHome(t)
 	result := UpgradePythonRuntime(t.TempDir(), false, &UpgradeRuntimeOptions{
 		HTTPClient: testVersionClient(t, "0.9.7", "v0.8.1"),
 		Runner:     runner,
 		LookPath:   func(string) (string, error) { return "", errors.New("no uv") },
 		Stat:       statAllExist,
+		Home:       home,
+		LookupEnv:  env,
 	})
 	if !result.Healthy || !result.Updated {
 		t.Fatalf("expected healthy updated result: %+v", result)
@@ -222,11 +237,14 @@ func TestUpgradePythonRuntimeSkipsEditableInstall(t *testing.T) {
 		versions:       []string{"0.10.6"},
 		editableSource: "file:///Users/dev/lingtai-kernel",
 	}
+	home, env := noDevHome(t)
 	result := UpgradePythonRuntime(t.TempDir(), false, &UpgradeRuntimeOptions{
 		HTTPClient: testVersionClient(t, "0.10.7", "v0.8.1"),
 		Runner:     runner,
 		LookPath:   func(string) (string, error) { return "/usr/bin/uv", nil },
 		Stat:       statAllExist,
+		Home:       home,
+		LookupEnv:  env,
 	})
 	if !result.Healthy {
 		t.Fatalf("editable install must remain Healthy: %+v", result.Lines)
@@ -251,11 +269,14 @@ func TestUpgradePythonRuntimeForceRespectsEditableInstall(t *testing.T) {
 		versions:       []string{"0.10.6"},
 		editableSource: "file:///Users/dev/lingtai-kernel",
 	}
+	home, env := noDevHome(t)
 	result := UpgradePythonRuntime(t.TempDir(), true, &UpgradeRuntimeOptions{
 		HTTPClient: testVersionClient(t, "0.10.7", "v0.8.1"),
 		Runner:     runner,
 		LookPath:   func(string) (string, error) { return "/usr/bin/uv", nil },
 		Stat:       statAllExist,
+		Home:       home,
+		LookupEnv:  env,
 	})
 	if result.Updated {
 		t.Fatalf("forced editable upgrade must not report Updated")
@@ -302,6 +323,8 @@ func TestRunDoctorUpdateMissingVenvRunsEnsureVenv(t *testing.T) {
 			return "", errors.New("no " + name)
 		},
 		Executable: func() (string, error) { return filepath.Join(globalDir, "lingtai-tui"), nil },
+		Home:       t.TempDir(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
 		Readlink:   func(string) (string, error) { return "", os.ErrInvalid },
 		Stat: func(path string) (os.FileInfo, error) {
 			if path == pythonPath && !ensureCalled {
@@ -334,6 +357,8 @@ func TestRunDoctorUpdateTUIUpToDate(t *testing.T) {
 		Runner:            runner,
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:              statAllExist,
 	})
@@ -358,6 +383,8 @@ func TestRunDoctorUpdateTUIOutdatedWithoutForceDoesNotRunBrew(t *testing.T) {
 		Runner:            runner,
 		LookPath:          func(string) (string, error) { return "/opt/homebrew/bin/brew", nil },
 		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:              statAllExist,
 	})
@@ -394,6 +421,8 @@ func TestRunDoctorUpdateBrokenVenvRunsEnsureVenv(t *testing.T) {
 		Runner:            runnerWithBrokenFirstImport,
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return filepath.Join(globalDir, "lingtai-tui"), nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:              statAllExist,
 		EnsureVenvFunc: func(string) error {
@@ -433,6 +462,8 @@ func TestRunDoctorUpdateTUIOutdatedForceRunsBrewInOrder(t *testing.T) {
 			return "", errors.New("not found")
 		},
 		Executable: func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:       t.TempDir(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
 		Readlink:   func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:       statAllExist,
 	})
@@ -465,6 +496,8 @@ func TestRunDoctorUpdateEnsureVenvSuccessButPythonStillMissingFails(t *testing.T
 		Runner:            &fakeRunner{},
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return filepath.Join(globalDir, "lingtai-tui"), nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat: func(path string) (os.FileInfo, error) {
 			if path == pythonPath {
@@ -497,6 +530,8 @@ func TestRunDoctorUpdateReportsTUISymlinkCaveat(t *testing.T) {
 		Runner:            runner,
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "/Users/me/dev/lingtai/tui/bin/lingtai-tui", nil },
 		Stat:              statAllExist,
 	})
@@ -534,6 +569,8 @@ func TestRunDoctorUpdateReportsFileSearchFallbackAndMissingCargo(t *testing.T) {
 		Runner:            runner,
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:              statAllExist,
 	})
@@ -560,6 +597,8 @@ func TestRunDoctorUpdateReportsBundledSidecarWithoutCargo(t *testing.T) {
 		Runner:            runner,
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:              statAllExist,
 	})
@@ -600,6 +639,8 @@ func TestRunDoctorUpdateReportsUnsupportedRuntimeInfo(t *testing.T) {
 		Runner:            runner,
 		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
 		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Home:              t.TempDir(),
+		LookupEnv:         func(string) (string, bool) { return "", false },
 		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
 		Stat:              statAllExist,
 	})
