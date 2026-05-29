@@ -9,9 +9,10 @@ This package manages the TUI's bootstrap sequence — the steps that run before 
 - **`venv.go:59-166`** — `EnsureVenv`: creates the runtime venv at `~/.lingtai-tui/runtime/venv/`. Uses `uv` if available (can auto-download Python 3.13), falls back to system Python. Verifies Python 3.11+, installs `lingtai`, symlinks CLI into PATH.
 - **`venv.go:300-309`** — `CheckUpgrade`: thin wrapper over `UpgradePythonRuntime(globalDir, false, ...)` that returns `true` only when a real upgrade was verified post-install. Used by `EnsureRuntime`, where any failure is silent so the TUI can still launch. It no longer reports success when the underlying pip command fails.
 - **`venv.go:311-350`** — `EnsureRuntime` / `EnsureRuntimeQuiet`: startup helpers that ensure the managed Python runtime exists, then always run the non-blocking `CheckUpgrade` path after a successful ensure. This avoids the old intermittent skip where a newly-created/repaired venv would not check PyPI until the next launch.
-- **`venv.go:424-454`** — `RunDoctorUpdate`: the forced check-and-update routine called by `/doctor` and `lingtai-tui doctor`. Verifies the TUI binary against the latest GitHub release (brew-upgrades when needed), repairs a missing/broken runtime venv, then runs `UpgradePythonRuntime(force=true)`. All command stdout/stderr is captured after command completion and surfaced; nothing is silently swallowed.
-- **`venv.go:604-673`** — `UpgradePythonRuntime`: compares installed `lingtai` to PyPI, runs `uv pip install --upgrade lingtai -p <venv>` (or `pip install --upgrade lingtai`), then re-imports to verify the new version. Reports `DoctorFail` on any command error or post-install version mismatch.
-- **`venv.go:352-421`** — `DoctorOptions` / `CommandRunner`: dependency-injection seams so tests stub brew/pip/python without dialing the network. Production callers leave them nil and get real `exec.Command` + `http.Client`.
+- **`venv.go:430-461`** — `RunDoctorUpdate`: the forced check-and-update routine called by `/doctor` and `lingtai-tui doctor`. Verifies the TUI binary against the latest GitHub release (brew-upgrades when needed), repairs a missing/broken runtime venv, then runs `UpgradePythonRuntime(force=true)`, then reports native file-search sidecar/Rust availability via `checkFileSearchNative`. All command stdout/stderr is captured after command completion and surfaced; nothing is silently swallowed.
+- **`venv.go:742-825`** — `UpgradePythonRuntime`: compares installed `lingtai` to PyPI, runs `uv pip install --upgrade lingtai -p <venv>` (or `pip install --upgrade lingtai`), then re-imports to verify the new version. Reports `DoctorFail` on any command error or post-install version mismatch.
+- **`venv.go:388-428`** — `DoctorOptions` / `CommandRunner`: dependency-injection seams so tests stub brew/pip/python without dialing the network. Production callers leave them nil and get real `exec.Command` + `http.Client`.
+- **`venv.go:551-652`** — `checkFileSearchNative` / `FileSearchStatus` / `timeoutCommandRunner` / `FileSearchNativeStatus`: asks the managed Python runtime which file-search backend it will use (`RustFileIOBackend` sidecar vs Python fallback) and reports both packaged sidecar status and local Cargo availability for `/doctor` / startup guidance. The probe runs through a `timeoutCommandRunner` (3s default) so startup and `/doctor` cannot hang on a slow or broken managed Python runtime. A `ModuleNotFoundError` for `lingtai.services.file_io_sidecar` (a runtime that predates the Rust sidecar release) is reported as `FileSearchStatus{Unsupported: true}` rather than an error; `checkFileSearchNative` then emits a single `DoctorInfo` line ("does not expose Rust sidecar diagnostics yet; upgrade the lingtai Python package…") and the report stays healthy.
 - **`venv.go:283-313`** — `EnsureAddons`: reads `init.json`'s `addons` map, verifies each addon is importable as `lingtai.addons.<name>`. Error surfaces which addon is missing and suggests `pip install --upgrade lingtai`.
 - **`venv.go:241-254`** — `CheckTUIUpgrade`: compares running TUI binary version against latest GitHub release. Returns tag if upgrade available. Used by the startup-time prompt in `main.go`.
 - **`venv.go:47-57`** — `NeedsVenv`: returns true if no venv exists or `lingtai` is not importable.
@@ -23,15 +24,16 @@ This package manages the TUI's bootstrap sequence — the steps that run before 
 
 ## Connections
 
-- **Called from:** `tui/main.go:277-289`, `tui/internal/tui/firstrun.go:597-604`, and `tui/internal/headless/spawn.go:77-83` — startup/first-run/headless bootstrap paths.
+- **Called from:** `tui/main.go:228-273`, `tui/internal/tui/firstrun.go:597-604`, and `tui/internal/headless/spawn.go:77-83` — startup/first-run/headless bootstrap paths.
 - **Calls out:** PyPI API (`pypi.org/pypi/lingtai/json`), GitHub API (`api.github.com/repos/Lingtai-AI/lingtai/releases/latest`), `uv` / `pip` CLI.
-- **Bootstrap sequence** (in `main.go:277-295`):
+- **Bootstrap sequence** (in `main.go:228-273`):
   1. `config.MigrateLegacyLanguage(globalDir)` — one-shot language migration
   2. `config.NeedsVenv(globalDir)` — check if a setup banner should be printed
   3. `config.EnsureRuntime(globalDir)` — create/repair venv if needed, then always auto-check/upgrade the `lingtai` PyPI package
   4. `config.EnsureAddons(python, agentDir)` — verify addon importability
   5. `preset.Bootstrap(globalDir)` — copy preset resources
   6. `tui.ExportCommandsJSON(globalDir)` — export slash commands
+  7. `maybePromptRustToolchain(globalDir)` — one-time optional Rust/Cargo prompt when native file search is unavailable and Cargo is missing
 
 ## Composition
 
@@ -40,7 +42,7 @@ This package manages the TUI's bootstrap sequence — the steps that run before 
 
 ## State
 
-- **Writes:** `~/.lingtai-tui/runtime/venv/` (Python venv), `~/.lingtai-tui/config.json` (API keys), `~/.lingtai-tui/tui_config.json` (TUI prefs), `~/.lingtai-tui/.env` (env file for agents).
+- **Writes:** `~/.lingtai-tui/runtime/venv/` (Python venv), `~/.lingtai-tui/runtime/rust-toolchain-prompted` (one-time Rust prompt marker), `~/.lingtai-tui/config.json` (API keys), `~/.lingtai-tui/tui_config.json` (TUI prefs), `~/.lingtai-tui/.env` (env file for agents).
 - **Reads:** `init.json` (addon declarations), PyPI/GitHub APIs (version checks).
 
 ## Notes

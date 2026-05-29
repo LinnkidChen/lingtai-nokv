@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -269,6 +270,7 @@ func main() {
 			os.Exit(1)
 		}
 		tui.ExportCommandsJSON(globalDir)
+		maybePromptRustToolchain(globalDir)
 
 		// Recipe reconciliation: if the project carries a recipe bundle at
 		// its root (.recipe/) and the contents differ from the last-applied
@@ -663,6 +665,79 @@ func printHelp() {
 	} else {
 		fmt.Printf("  Working dir:   (no .lingtai/ in %s)\n", cwd)
 	}
+}
+
+func maybePromptRustToolchain(globalDir string) {
+	if os.Getenv("LINGTAI_SKIP_RUST_PROMPT") == "1" {
+		return
+	}
+	if info, err := os.Stdin.Stat(); err != nil || (info.Mode()&os.ModeCharDevice) == 0 {
+		return
+	}
+
+	promptPath := filepath.Join(globalDir, "runtime", "rust-toolchain-prompted")
+	if _, err := os.Stat(promptPath); err == nil {
+		return
+	}
+
+	status, err := config.FileSearchNativeStatus(globalDir, nil)
+	if err != nil {
+		// The probe failed (slow/broken/old runtime). Mark the prompt seen so
+		// we don't re-spawn the Python probe on every startup forever.
+		markRustPromptSeen(promptPath, "probe-error\n")
+		return
+	}
+	if status.Unsupported {
+		// Installed runtime predates the Rust sidecar diagnostics. Nothing the
+		// user can act on here, and the probe will keep failing until they
+		// upgrade lingtai — so record it once and stop prompting.
+		markRustPromptSeen(promptPath, "unsupported-runtime\n")
+		return
+	}
+	if status.SidecarPath != "" || status.Backend == "RustFileIOBackend" {
+		return
+	}
+	if cargo, err := exec.LookPath("cargo"); err == nil && cargo != "" {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println("LingTai is using the pure-Python file search fallback; Rust/Cargo is not installed.")
+	fmt.Println("Rust is optional, but installing it lets source installs build the accelerated glob/grep sidecar.")
+	fmt.Print("Install Rust now via rustup.rs? [y/N] ")
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "y" && answer != "yes" {
+		markRustPromptSeen(promptPath, "declined\n")
+		return
+	}
+
+	if runtime.GOOS == "windows" {
+		fmt.Println("Please install Rust from https://rustup.rs, then reinstall/upgrade the LingTai Python runtime if you need the native sidecar.")
+		markRustPromptSeen(promptPath, "manual-windows\n")
+		return
+	}
+
+	installCmd := "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal"
+	fmt.Printf("Running: %s\n", installCmd)
+	cmd := exec.Command("sh", "-c", installCmd)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Rust installer failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "You can install manually from https://rustup.rs and then reinstall/upgrade the LingTai Python runtime.")
+		return
+	}
+	fmt.Println("Rust installed. Open a new shell if cargo is not on PATH yet; reinstall/upgrade the LingTai Python runtime to rebuild the native sidecar if this install currently falls back to Python.")
+	markRustPromptSeen(promptPath, "installed\n")
+}
+
+func markRustPromptSeen(path, content string) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(path, []byte(content), 0o644)
 }
 
 func printWelcomeInfo() {

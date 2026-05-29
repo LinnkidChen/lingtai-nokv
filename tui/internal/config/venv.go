@@ -2,6 +2,7 @@ package config
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -455,6 +456,7 @@ func RunDoctorUpdate(globalDir string, opts DoctorOptions) DoctorReport {
 
 	report.checkTUI(opts)
 	report.checkPythonRuntime(globalDir, opts)
+	report.checkFileSearchNative(globalDir, opts)
 	return report
 }
 
@@ -544,6 +546,108 @@ func (r *DoctorReport) checkPythonRuntime(globalDir string, opts DoctorOptions) 
 	if !upgrade.Healthy {
 		r.Healthy = false
 	}
+}
+
+func (r *DoctorReport) checkFileSearchNative(globalDir string, opts DoctorOptions) {
+	python := VenvPython(RuntimeVenvDir(globalDir))
+	if _, err := opts.Stat(python); err != nil {
+		r.add(DoctorWarn, "File search native backend: skipped because Python runtime is missing: %v", err)
+		return
+	}
+	status, err := FileSearchNativeStatus(globalDir, opts.Runner)
+	if err != nil {
+		r.add(DoctorWarn, "File search native backend: could not inspect runtime sidecar status: %v", err)
+		return
+	}
+	if status.Unsupported {
+		r.add(DoctorInfo, "File search native backend: installed Python runtime does not expose Rust sidecar diagnostics yet; upgrade the lingtai Python package after the Rust sidecar release to enable this check")
+		return
+	}
+	if status.SidecarPath != "" {
+		r.add(DoctorOK, "File search native backend: Rust sidecar available (%s)", status.SidecarPath)
+	} else if status.Backend == "RustFileIOBackend" {
+		r.add(DoctorOK, "File search native backend: Rust backend active")
+	} else {
+		r.add(DoctorWarn, "File search native backend: Python fallback active; no packaged Rust sidecar was found")
+	}
+	if cargo, err := opts.LookPath("cargo"); err == nil && cargo != "" {
+		r.add(DoctorOK, "Rust toolchain: cargo found at %s", cargo)
+	} else if status.SidecarPath != "" || status.Backend == "RustFileIOBackend" {
+		r.add(DoctorInfo, "Rust toolchain: cargo not found, but bundled sidecar is already available at runtime")
+	} else {
+		r.add(DoctorWarn, "Rust toolchain: cargo not found; install Rust from https://rustup.rs or install a platform wheel with the bundled sidecar to enable accelerated glob/grep")
+	}
+}
+
+type FileSearchStatus struct {
+	Backend     string
+	SidecarPath string
+	Unsupported bool
+}
+
+type timeoutCommandRunner struct {
+	timeout time.Duration
+}
+
+func (r timeoutCommandRunner) Run(name string, args ...string) CommandResult {
+	timeout := r.timeout
+	if timeout <= 0 {
+		timeout = 3 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return CommandResult{Stdout: stdout.String(), Stderr: stderr.String(), Err: fmt.Errorf("timed out after %s", timeout)}
+	}
+	return CommandResult{Stdout: stdout.String(), Stderr: stderr.String(), Err: err}
+}
+
+// FileSearchNativeStatus asks the managed Python runtime which file-search
+// backend it will use. The probe is intentionally Python-side because the
+// sidecar resolver lives in the `lingtai` package installed inside that venv.
+// Production calls use a short timeout so startup and /doctor cannot hang on a
+// slow or broken managed Python runtime; tests may pass a runner.
+func FileSearchNativeStatus(globalDir string, runner CommandRunner) (FileSearchStatus, error) {
+	if runner == nil {
+		runner = timeoutCommandRunner{timeout: 3 * time.Second}
+	}
+	python := VenvPython(RuntimeVenvDir(globalDir))
+	script := `
+import tempfile
+from lingtai.services.file_io_sidecar import default_file_io_service, resolve_sidecar_binary
+binary = resolve_sidecar_binary()
+service = default_file_io_service(tempfile.gettempdir(), backend="auto")
+backend = type(getattr(service, "_backend", service)).__name__
+print("BACKEND " + backend)
+print("SIDECAR " + (str(binary) if binary else ""))
+`
+	res := runner.Run(python, "-c", script)
+	if res.Err != nil {
+		stderr := strings.TrimSpace(res.Stderr)
+		if strings.Contains(stderr, "ModuleNotFoundError") && strings.Contains(stderr, "file_io_sidecar") {
+			return FileSearchStatus{Unsupported: true}, nil
+		}
+		return FileSearchStatus{}, fmt.Errorf("probe failed: %v: %s", res.Err, stderr)
+	}
+	status := FileSearchStatus{}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "BACKEND "):
+			status.Backend = strings.TrimSpace(strings.TrimPrefix(line, "BACKEND "))
+		case strings.HasPrefix(line, "SIDECAR "):
+			status.SidecarPath = strings.TrimSpace(strings.TrimPrefix(line, "SIDECAR "))
+		}
+	}
+	if status.Backend == "" {
+		return FileSearchStatus{}, fmt.Errorf("probe returned no backend line: %q", strings.TrimSpace(res.Stdout))
+	}
+	return status, nil
 }
 
 type latestRelease struct {
@@ -763,10 +867,10 @@ func pythonLingtaiVersion(runner CommandRunner, python string) (string, error) {
 
 // isEditableLingtaiInstall reports whether the lingtai distribution in the
 // given Python interpreter was installed in editable mode (pip/uv -e ...).
-// Detection follows PEP 610: the install records a ``direct_url.json`` file
+// Detection follows PEP 610: the install records a direct_url.json file
 // inside the package's .dist-info/ directory; editable installs set
-// ``dir_info.editable: true``. The second return is the editable source path
-// (e.g. ``file:///Users/.../lingtai-kernel``) if available, for the log line.
+// dir_info.editable: true. The second return is the editable source path
+// (e.g. file:///Users/.../lingtai-kernel) if available, for the log line.
 // Returns (false, "") on any error so a missing or malformed direct_url is
 // treated as "regular wheel install" — the conservative default that lets the
 // upgrade proceed.

@@ -12,15 +12,33 @@ import (
 )
 
 type fakeRunner struct {
-	versions       []string
-	failPip        bool
-	editableSource string // when non-empty, the editable-detect probe reports EDITABLE <source>
-	calls          []string
+	versions          []string
+	failPip           bool
+	editableSource    string // when non-empty, the editable-detect probe reports EDITABLE <source>
+	fileSearchStdout  string // when non-empty, returned for the file_io_sidecar probe
+	fileSearchErr     bool
+	fileSearchMissing bool // when true, the probe fails with ModuleNotFoundError for file_io_sidecar
+	calls             []string
 }
 
 func (r *fakeRunner) Run(name string, args ...string) CommandResult {
 	call := name + " " + strings.Join(args, " ")
 	r.calls = append(r.calls, call)
+	if strings.Contains(call, "file_io_sidecar") {
+		if r.fileSearchMissing {
+			return CommandResult{
+				Err:    errors.New("exit status 1"),
+				Stderr: "Traceback (most recent call last):\n  File \"<string>\", line 2, in <module>\nModuleNotFoundError: No module named 'lingtai.services.file_io_sidecar'",
+			}
+		}
+		if r.fileSearchErr {
+			return CommandResult{Err: errors.New("exit status 1"), Stderr: "probe failed"}
+		}
+		if r.fileSearchStdout != "" {
+			return CommandResult{Stdout: r.fileSearchStdout}
+		}
+		return CommandResult{Stdout: "BACKEND RustFileIOBackend\nSIDECAR /tmp/lingtai-search-sidecar\n"}
+	}
 	if strings.Contains(call, "direct_url.json") {
 		// Editable-install probe (isEditableLingtaiInstall). Default response
 		// is "WHEEL" — matching the conservative no-skip default for existing
@@ -487,6 +505,117 @@ func TestRunDoctorUpdateReportsTUISymlinkCaveat(t *testing.T) {
 	}
 	if !containsLine(report.Lines, "executable is a symlink") {
 		t.Fatalf("expected symlink caveat: %+v", report.Lines)
+	}
+}
+
+func TestFileSearchNativeStatusParsesProbe(t *testing.T) {
+	runner := &fakeRunner{fileSearchStdout: "BACKEND LocalFileIOBackend\nSIDECAR \n"}
+	status, err := FileSearchNativeStatus(t.TempDir(), runner)
+	if err != nil {
+		t.Fatalf("FileSearchNativeStatus err = %v", err)
+	}
+	if status.Backend != "LocalFileIOBackend" || status.SidecarPath != "" {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+	if !containsCall(runner.calls, "file_io_sidecar") {
+		t.Fatalf("expected Python file_io_sidecar probe, got %#v", runner.calls)
+	}
+}
+
+func TestRunDoctorUpdateReportsFileSearchFallbackAndMissingCargo(t *testing.T) {
+	runner := &fakeRunner{
+		versions:         []string{"0.9.7", "0.9.7"},
+		fileSearchStdout: "BACKEND LocalFileIOBackend\nSIDECAR \n",
+	}
+	report := RunDoctorUpdate(t.TempDir(), DoctorOptions{
+		CurrentTUIVersion: "v0.8.1",
+		ForcePython:       false,
+		HTTPClient:        testVersionClient(t, "0.9.7", "v0.8.1"),
+		Runner:            runner,
+		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
+		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
+		Stat:              statAllExist,
+	})
+	if !report.Healthy {
+		t.Fatalf("file-search fallback is a warning, not a failed doctor report: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "Python fallback active") {
+		t.Fatalf("expected Python fallback warning: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "cargo not found") {
+		t.Fatalf("expected missing cargo warning: %+v", report.Lines)
+	}
+}
+
+func TestRunDoctorUpdateReportsBundledSidecarWithoutCargo(t *testing.T) {
+	runner := &fakeRunner{
+		versions:         []string{"0.9.7", "0.9.7"},
+		fileSearchStdout: "BACKEND RustFileIOBackend\nSIDECAR /opt/lingtai/bin/lingtai-search-sidecar\n",
+	}
+	report := RunDoctorUpdate(t.TempDir(), DoctorOptions{
+		CurrentTUIVersion: "v0.8.1",
+		ForcePython:       false,
+		HTTPClient:        testVersionClient(t, "0.9.7", "v0.8.1"),
+		Runner:            runner,
+		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
+		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
+		Stat:              statAllExist,
+	})
+	if !report.Healthy {
+		t.Fatalf("expected healthy report: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "Rust sidecar available") {
+		t.Fatalf("expected sidecar OK line: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "bundled sidecar is already available") {
+		t.Fatalf("expected no-cargo-but-sidecar info line: %+v", report.Lines)
+	}
+}
+
+func TestFileSearchNativeStatusReportsUnsupportedOnModuleMissing(t *testing.T) {
+	runner := &fakeRunner{fileSearchMissing: true}
+	status, err := FileSearchNativeStatus(t.TempDir(), runner)
+	if err != nil {
+		t.Fatalf("ModuleNotFoundError should be treated as Unsupported, not an error: %v", err)
+	}
+	if !status.Unsupported {
+		t.Fatalf("expected Unsupported=true on missing file_io_sidecar module: %+v", status)
+	}
+	if !containsCall(runner.calls, "file_io_sidecar") {
+		t.Fatalf("expected Python file_io_sidecar probe, got %#v", runner.calls)
+	}
+}
+
+func TestRunDoctorUpdateReportsUnsupportedRuntimeInfo(t *testing.T) {
+	runner := &fakeRunner{
+		versions:          []string{"0.9.7", "0.9.7"},
+		fileSearchMissing: true,
+	}
+	report := RunDoctorUpdate(t.TempDir(), DoctorOptions{
+		CurrentTUIVersion: "v0.8.1",
+		ForcePython:       false,
+		HTTPClient:        testVersionClient(t, "0.9.7", "v0.8.1"),
+		Runner:            runner,
+		LookPath:          func(string) (string, error) { return "", errors.New("not found") },
+		Executable:        func() (string, error) { return "/opt/homebrew/bin/lingtai-tui", nil },
+		Readlink:          func(string) (string, error) { return "", os.ErrInvalid },
+		Stat:              statAllExist,
+	})
+	if !report.Healthy {
+		t.Fatalf("an unsupported runtime is informational, not a failed doctor report: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "does not expose Rust sidecar diagnostics yet") {
+		t.Fatalf("expected unsupported-runtime info line: %+v", report.Lines)
+	}
+	// The unsupported path must short-circuit: no generic "could not inspect"
+	// warning and no "Python fallback" / cargo guidance.
+	if containsLine(report.Lines, "could not inspect runtime sidecar status") {
+		t.Fatalf("unsupported runtime should not emit the generic probe-error warning: %+v", report.Lines)
+	}
+	if containsLine(report.Lines, "Python fallback active") {
+		t.Fatalf("unsupported runtime should short-circuit before the fallback/cargo lines: %+v", report.Lines)
 	}
 }
 
