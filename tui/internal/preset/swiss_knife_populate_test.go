@@ -47,3 +47,27 @@ func TestPopulateBundledLibrary_SwissKnifeNestedReferences(t *testing.T) {
 		}
 	}
 }
+
+// TestPopulateBundledLibrary_WebBrowsingNestedReferences verifies that the
+// embedded utility-library copier preserves web-browsing's nested reference
+// router files alongside the existing deep-dive references and scripts.
+func TestPopulateBundledLibrary_WebBrowsingNestedReferences(t *testing.T) {
+	globalDir := t.TempDir()
+	PopulateBundledLibrary("", globalDir)
+
+	utilitiesDir := filepath.Join(globalDir, "utilities", "web-browsing")
+	for _, rel := range []string{
+		"SKILL.md",
+		"scripts/extract_page.py",
+		"scripts/cached_get.py",
+		"reference/tier-quick-refs/SKILL.md",
+		"reference/routing-and-sites/SKILL.md",
+		"reference/maintenance-bundles/SKILL.md",
+		"reference/tier-0-pdf.md",
+		"assets/search-providers.json",
+	} {
+		if _, err := os.Stat(filepath.Join(utilitiesDir, rel)); err != nil {
+			t.Fatalf("expected bundled web-browsing file %s to be extracted: %v", rel, err)
+		}
+	}
+}
