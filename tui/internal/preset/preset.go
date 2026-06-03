@@ -1232,6 +1232,7 @@ type AgentOpts struct {
 	SoulDelay      float64  // seconds between soul cycles
 	MoltPressure   float64  // 0–1 ratio triggering molt
 	MaxRpm         int      // API requests-per-minute cap (cooperative network gate); 0 disables
+	MaxAedAttempts int      // AED (auto-error-recovery) retry attempts per message turn before fallback/sleep
 	Karma          bool     // lifecycle control over other agents
 	Nirvana        bool     // permanent agent destruction
 	CovenantFile   string   // path to covenant file
@@ -1256,15 +1257,42 @@ type AgentOpts struct {
 // DefaultAgentOpts returns sensible defaults for agent creation.
 func DefaultAgentOpts() AgentOpts {
 	return AgentOpts{
-		Language:     "en",
-		Stamina:      36000,
-		ContextLimit: 200000,
-		SoulDelay:    99999,
-		MoltPressure: 0.8,
-		MaxRpm:       60,
-		Karma:        true,
-		Nirvana:      false,
+		Language:       "en",
+		Stamina:        36000,
+		ContextLimit:   200000,
+		SoulDelay:      99999,
+		MoltPressure:   0.8,
+		MaxRpm:         60,
+		MaxAedAttempts: DefaultMaxAedAttempts,
+		Karma:          true,
+		Nirvana:        false,
 	}
+}
+
+// AED max-attempts validation bounds. DefaultMaxAedAttempts mirrors the
+// kernel's effective production fallback — agent.py `_read_init` reconstructs
+// the agent config with `m.get("max_aed_attempts", 3)` on every setup/refresh,
+// so 3 is what an absent key resolves to in practice. (The AgentConfig
+// dataclass field defaults to 10, but that value only applies when config is
+// built without `_setup_from_init`, mostly in tests.)
+const (
+	DefaultMaxAedAttempts = 3
+	MinMaxAedAttempts     = 1
+	MaxMaxAedAttempts     = 100
+)
+
+// ClampAedAttempts validates a user-supplied AED max-attempts value. A value of
+// zero or below (the zero value, or empty/invalid input parsed to 0) falls back
+// to DefaultMaxAedAttempts; anything above MaxMaxAedAttempts is clamped down to
+// the ceiling. The result is always within [MinMaxAedAttempts, MaxMaxAedAttempts].
+func ClampAedAttempts(n int) int {
+	if n < MinMaxAedAttempts {
+		return DefaultMaxAedAttempts
+	}
+	if n > MaxMaxAedAttempts {
+		return MaxMaxAedAttempts
+	}
+	return n
 }
 
 // GenerateInitJSON creates a full init.json from a preset using default opts.
@@ -1348,6 +1376,10 @@ func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDi
 	manifest["molt_prompt"] = ""
 	manifest["max_turns"] = 100
 	manifest["max_rpm"] = opts.MaxRpm
+	// AED max-attempts: normalize through ClampAedAttempts so a zero-value
+	// AgentOpts (caller didn't set it) still writes a valid default rather
+	// than 0, which the kernel would treat as "never retry".
+	manifest["max_aed_attempts"] = ClampAedAttempts(opts.MaxAedAttempts)
 	manifest["streaming"] = false
 	// Track which preset this agent was created from. The kernel reads this
 	// at boot to materialize manifest.llm + manifest.capabilities from the

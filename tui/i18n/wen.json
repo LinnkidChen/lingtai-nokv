@@ -49,6 +49,8 @@
   "firstrun.molt_pressure_hint": "凝蜕之门槛（施于诸灵）",
   "firstrun.max_rpm": "频限",
   "firstrun.max_rpm_hint": "每分钟请求之限，同道诸灵共此额度；零则无限",
+  "firstrun.max_aed_attempts": "AED 尝试上限",
+  "firstrun.max_aed_attempts_hint": "自动纠错之试数，尽则退避/入寐；过高则久试不休",
   "firstrun.karma": "因果",
   "firstrun.karma_hint": "御他器",
   "firstrun.nirvana": "涅槃",

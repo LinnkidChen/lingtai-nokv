@@ -49,6 +49,8 @@
   "firstrun.molt_pressure_hint": "触发凝蜕的上下文占比（应用于所有器灵）",
   "firstrun.max_rpm": "每分请求上限",
   "firstrun.max_rpm_hint": "API 每分钟请求上限，所有共用同一服务商的器灵合用此额度；0 = 不限",
+  "firstrun.max_aed_attempts": "AED 最大尝试次数",
+  "firstrun.max_aed_attempts_hint": "自动错误恢复尝试上限，达到后 fallback/睡眠；过高可能长时间重试",
   "firstrun.karma": "因果",
   "firstrun.karma_hint": "管理其他智能体",
   "firstrun.nirvana": "涅槃",

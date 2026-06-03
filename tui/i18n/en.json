@@ -49,6 +49,8 @@
   "firstrun.molt_pressure_hint": "context % to trigger molt (applies to all agents)",
   "firstrun.max_rpm": "Max RPM",
   "firstrun.max_rpm_hint": "API requests/min cap, shared across all agents on the same provider; 0 = no cap",
+  "firstrun.max_aed_attempts": "AED max attempts",
+  "firstrun.max_aed_attempts_hint": "auto-error-recovery tries before fallback/sleep; high values can retry for a long time",
   "firstrun.karma": "Karma",
   "firstrun.karma_hint": "manage other agents",
   "firstrun.nirvana": "Nirvana",
