@@ -2,9 +2,9 @@
 
 # LingTai
 
-**Stop losing your AI at the end of a chat. Give every project a resident agent.**
+**Build an AI organization inside your project — not just another agent.**
 
-Local-first · durable memory · mailboxes · real tools · lifecycle · multi-agent networks
+Local-first · resident agents · soul-flow proactiveness · mailboxes · lifecycle · multi-agent networks
 
 [English](README.md) · [中文](README.zh.md) · [文言](README.wen.md) · [Website](https://lingtai.ai) · [Releases](https://lingtai.ai/releases/)
 
@@ -18,11 +18,13 @@ Local-first · durable memory · mailboxes · real tools · lifecycle · multi-a
 
 ---
 
-Most AI tools answer once, then disappear. **LingTai installs a long-lived AI agent inside your project** — a real local process with a home directory, inbox/outbox, memory, tools, sleep/wake controls, and peers it can call when the job gets bigger than one mind.
+Most agent tools give you a better worker. **LingTai gives you the substrate for an AI organization**: long-lived local agents with home directories, inbox/outbox mailboxes, durable memory, lifecycle controls, self-reflection, and peers they can spawn or call when the work gets bigger than one mind.
 
-Send a task from the TUI, Telegram, Feishu/Lark, WeChat, WhatsApp, or email. The same agent wakes up, reads its project memory, uses local tools, writes artifacts, and replies on the channel where you started.
+Tools such as **OpenClaw** and **Hermes** are useful hands for executing agentic tasks. LingTai is the organizational layer around those hands: it can use coding agents and CLIs as workers, while preserving the roles, memory, communication, supervision, and recovery paths that let an agent network keep operating after a single chat or terminal session ends.
 
-## A project agent, not another chat window
+Send a task from the TUI, Telegram, Feishu/Lark, WeChat, WhatsApp, or email. The same organization wakes up through the addressed agent, reads project memory, uses local tools, writes artifacts, coordinates peers when needed, and replies on the channel where you started.
+
+## A meta-organization, not another chat window
 
 ```text
 You
@@ -33,12 +35,13 @@ LingTai
   wakes from its mailbox
   → reads durable project memory
   → runs shell / web / file / coding-agent tools
+  → reflects via soul flow when idle or stuck
   → writes notes, reports, patches, or schedules
   → asks a specialist avatar or daemon when parallel work helps
   → replies on Telegram / TUI / email with the artifacts
 ```
 
-Close the terminal if you want. The agent still has a filesystem home under `.lingtai/`, a mailbox, logs you can inspect, and lifecycle controls to sleep, refresh, recover, or molt long sessions without losing the grain.
+Close the terminal if you want. The organization still has a filesystem home under `.lingtai/`, mailboxes, logs you can inspect, and lifecycle controls to sleep, refresh, recover, or molt long sessions without losing the grain. Soul flow gives agents a built-in reflective loop: after idle time they can re-read the situation, notice missed angles, and surface proactive next steps instead of waiting forever for the next prompt.
 
 ## Start in three commands
 
@@ -78,12 +81,13 @@ For source builds, mainland-China mirror setup, and from-tarball install paths, 
 
 ## Why it is different
 
-| Ordinary chat / one-shot agent | LingTai |
+| Agent tool / coding assistant | LingTai meta-organization builder |
 |---|---|
-| The conversation is the product. | The project agent is the product; the conversation is only one input channel. |
-| Closing the window ends the relationship. | The agent has a local home, mailbox, logs, memory, and lifecycle. |
-| Tool use is hidden in one transcript. | State is filesystem-first: inbox/outbox, reports, knowledge, and artifacts are inspectable with normal developer tools. |
-| Scaling means juggling more chats. | Spawn persistent avatars for specialists or short-lived daemons for parallel work; watch the topology in the portal. |
+| The conversation or run is the product. | The project organization is the product; conversations are only input channels. |
+| Tools like OpenClaw or Hermes act as capable workers for a task. | LingTai supplies the persistent org chart around the workers: memory, mail, roles, lifecycle, supervision, and recovery. |
+| Closing the window ends the relationship. | Agents have local homes, mailboxes, logs, memory, and lifecycle. |
+| Proactiveness depends on the user prompting again. | Soul flow lets an idle agent reflect, surface missed angles, and propose next moves. |
+| Scaling means juggling more chats or runs. | Spawn persistent avatars for specialists or short-lived daemons for parallel work; watch the topology in the portal. |
 | A bad turn means restart and hope. | Sleep, wake, refresh, CPR, clear, doctor, and molt are built into the runtime. |
 
 ## Architecture at a glance
@@ -92,24 +96,27 @@ For source builds, mainland-China mirror setup, and from-tarball install paths, 
 flowchart LR
     human[Human] --> channels[TUI / Telegram / Email / Feishu / WeChat]
     channels --> agent[Resident LingTai agent]
+    agent --> soul[Soul flow: reflection + proactive next steps]
     agent --> tools[Files / Bash / Web / Vision / MCP / Coding CLIs]
     agent --> memory[Pad / Knowledge / Skills / Character]
     agent --> lifecycle[Sleep / Wake / Refresh / CPR / Molt]
-    agent --> network[Avatars + Daemons]
-    network --> portal[Live portal visualization]
+    agent --> network[Organization: avatars + daemons]
+    network --> portal[Live org visualization]
     tools --> artifacts[Reports / patches / notes / scheduled work]
+    soul --> agent
     memory --> agent
 ```
 
-## Grows with the work
+## Builds an organization as the work grows
 
-Start with one assistant. When the work grows, the network grows with it:
+Start with one resident agent. When the work grows, the organization grows with it:
 
 - **Molt instead of forgetting.** Long sessions shed noisy transcript while carrying forward summaries and durable memory.
+- **Reflect instead of waiting.** Soul flow gives the agent an inner review loop for proactive insight when the project goes quiet or a path looks wrong.
 - **Spawn an avatar.** Give a persistent specialist its own memory, mailbox, and responsibility.
 - **Emanate a daemon.** Split a noisy batch into short-lived workers and keep only the conclusions.
-- **Use coding agents as hands.** Claude Code, Codex, and OpenCode can execute precise repo edits while LingTai owns the plan and communication.
-- **Watch it live.** The portal shows who is alive, what they are doing, and how the network has changed.
+- **Use coding agents as hands.** Claude Code, Codex, OpenCode, OpenClaw, Hermes, and similar tools can execute precise work while LingTai owns the plan, memory, coordination, and communication.
+- **Watch it live.** The portal shows who is alive, what they are doing, and how the organization has changed.
 
 <div align="center">
 
