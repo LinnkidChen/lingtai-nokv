@@ -15,18 +15,18 @@ import (
 
 // SessionEntry is the JSON-serializable entry stored in session.jsonl.
 type SessionEntry struct {
-	Ts          string   `json:"ts"`
-	Type        string   `json:"type"`
-	From        string   `json:"from,omitempty"`
-	To          string   `json:"to,omitempty"`
-	Subject     string   `json:"subject,omitempty"`
-	Body        string   `json:"body"`
-	Question    string   `json:"question,omitempty"`
-	Attachments []string `json:"attachments,omitempty"`
-	Source      string   `json:"source,omitempty"` // "human", "insight" — for inquiry entries
-	FireID      string   `json:"fire_id,omitempty"` // soul_flow fires — used to look up voices in soul_flow.jsonl
-	Sources     []string `json:"sources,omitempty"` // notification entries — list of source keys (email, soul, system, ...)
-	Meta        *NotificationMeta `json:"meta,omitempty"` // notification entries — vital signs at injection time (kernel build_meta + injection_seq)
+	Ts          string            `json:"ts"`
+	Type        string            `json:"type"`
+	From        string            `json:"from,omitempty"`
+	To          string            `json:"to,omitempty"`
+	Subject     string            `json:"subject,omitempty"`
+	Body        string            `json:"body"`
+	Question    string            `json:"question,omitempty"`
+	Attachments []string          `json:"attachments,omitempty"`
+	Source      string            `json:"source,omitempty"`  // "human", "insight" — for inquiry entries
+	FireID      string            `json:"fire_id,omitempty"` // soul_flow fires — used to look up voices in soul_flow.jsonl
+	Sources     []string          `json:"sources,omitempty"` // notification entries — list of source keys (email, soul, system, ...)
+	Meta        *NotificationMeta `json:"meta,omitempty"`    // notification entries — vital signs at injection time (kernel build_meta + injection_seq)
 
 	// Delivered is a transient field propagated from MailMessage.Delivered.
 	// Only meaningful for Type == "mail". Not persisted to session.jsonl.
@@ -40,10 +40,10 @@ type SessionEntry struct {
 // underlying state hasn't been computed yet, and older events.jsonl rows
 // pre-dating issue #40 carry no meta at all.
 type NotificationMeta struct {
-	CurrentTime        string                  `json:"current_time,omitempty"`
+	CurrentTime        string                   `json:"current_time,omitempty"`
 	Context            *NotificationMetaContext `json:"context,omitempty"`
-	StaminaLeftSeconds float64                 `json:"stamina_left_seconds,omitempty"`
-	InjectionSeq       int                     `json:"injection_seq,omitempty"`
+	StaminaLeftSeconds float64                  `json:"stamina_left_seconds,omitempty"`
+	InjectionSeq       int                      `json:"injection_seq,omitempty"`
 }
 
 type NotificationMetaContext struct {
@@ -55,15 +55,15 @@ type NotificationMetaContext struct {
 // SessionCache is an append-only cache backed by session.jsonl.
 // It incrementally tails three data sources and appends new entries.
 type SessionCache struct {
-	path        string          // human/logs/session.jsonl
-	entries     []SessionEntry  // in-memory mirror of all entries
-	lastMailTs  string          // highest mail ReceivedAt ingested (watermark for live-session dedup)
-	eventsOff   int64           // byte offset in events.jsonl
-	inquiryOff  int64           // byte offset in soul_inquiry.jsonl
-	soulFlowOff int64           // byte offset in soul_flow.jsonl (voice index source)
-	projectPath string          // absolute path of the project directory (parent of .lingtai/)
-	lastHour    time.Time       // hour (truncated) of the most recent entry
-	rebuilding  bool            // true during RebuildFromSources — suppress file writes
+	path        string         // human/logs/session.jsonl
+	entries     []SessionEntry // in-memory mirror of all entries
+	lastMailTs  string         // highest mail ReceivedAt ingested (watermark for live-session dedup)
+	eventsOff   int64          // byte offset in events.jsonl
+	inquiryOff  int64          // byte offset in soul_inquiry.jsonl
+	soulFlowOff int64          // byte offset in soul_flow.jsonl (voice index source)
+	projectPath string         // absolute path of the project directory (parent of .lingtai/)
+	lastHour    time.Time      // hour (truncated) of the most recent entry
+	rebuilding  bool           // true during RebuildFromSources — suppress file writes
 
 	// soulVoices indexes voices by fire_id, populated by tailing
 	// soul_flow.jsonl. Used to inflate soul_flow SessionEntry bodies that
@@ -94,7 +94,6 @@ func NewSessionCache(humanDir string, projectPath string) *SessionCache {
 	}
 	return sc
 }
-
 
 // RebuildFromSources reads all three data sources from scratch, merges and
 // sorts them chronologically, writes session.jsonl, and sets offsets to EOF
@@ -677,9 +676,9 @@ func extractSessionEventText(entry map[string]interface{}, eventType string) str
 				args = string(data)
 			}
 		}
-		if len(args) > 200 {
-			args = args[:200] + "..."
-		}
+		// Carry the full args verbatim. Truncation (if any) is applied at
+		// render time per the user's tool_call_truncate setting; the default
+		// is no truncation, so this path keeps full content.
 		return fmt.Sprintf("%s(%s)", name, args)
 	case "tool_result":
 		name, _ := entry["tool_name"].(string)

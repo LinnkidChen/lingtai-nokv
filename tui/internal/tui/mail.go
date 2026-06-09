@@ -144,10 +144,11 @@ type MailModel struct {
 	showEditorWarn    bool             // one-time vim warning overlay
 	editorWarnText    string           // text to pass to editor after warning
 	insightsEnabled   bool             // from settings — show insight events
+	toolCallTruncate  int              // from settings — max chars per tool line (0 = no truncation)
 	sessionCache      *fs.SessionCache // append-only session log
 }
 
-func NewMailModel(humanDir, humanAddr, baseDir, orchDir, orchName string, pageSize int, globalDir, lang string, insights bool) MailModel {
+func NewMailModel(humanDir, humanAddr, baseDir, orchDir, orchName string, pageSize int, globalDir, lang string, insights bool, toolCallTruncate int) MailModel {
 	input := NewInputModel(humanDir)
 	input.textarea.Focus()
 	palette := NewPaletteModel()
@@ -176,6 +177,7 @@ func NewMailModel(humanDir, humanAddr, baseDir, orchDir, orchName string, pageSi
 		globalDir:         globalDir,
 		quoteIdx:          -1,
 		insightsEnabled:   insights,
+		toolCallTruncate:  toolCallTruncate,
 		dismissedInsights: make(map[string]bool),
 		sessionCache:      fs.NewSessionCache(humanDir, filepath.Dir(baseDir)),
 	}
@@ -782,13 +784,21 @@ func (m MailModel) renderMessages(msgs []ChatMessage) string {
 				wrapWidth = 20
 			}
 			var evStyle lipgloss.Style
+			body := msg.Body
+			tsPrefix := ""
 			switch msg.Type {
 			case "thinking", "diary", "text_input", "text_output":
 				evStyle = thinkingStyle
 			default:
 				evStyle = toolStyle
+				// Tool lines get a leading timestamp and honor the user's
+				// per-tool-call truncation setting (0 = full content, the default).
+				if ts := formatToolTimestamp(msg.Timestamp); ts != "" {
+					tsPrefix = StyleFaint.Render(ts) + " "
+				}
+				body = truncateToolBody(body, m.toolCallTruncate)
 			}
-			wrapped := lipgloss.NewStyle().Width(wrapWidth).Render("[" + msg.Type + "] " + msg.Body)
+			wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(tsPrefix + "[" + msg.Type + "] " + body)
 			for _, line := range strings.Split(wrapped, "\n") {
 				b.WriteString(evStyle.Render("  "+RuneBullet+" "+line) + "\n")
 			}
