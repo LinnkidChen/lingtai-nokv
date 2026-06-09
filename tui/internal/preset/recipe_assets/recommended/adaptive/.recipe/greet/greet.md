@@ -9,4 +9,4 @@ Use the email tool to send a greeting to {{addr}}. Keep it warm and concise. In 
 - Mention that you can spawn avatars (independent sub-agents) that grow into a self-expanding network
 - Ask what they'd like to work on — or offer a quick tour if they're just exploring
 
-The canonical slash-command reference now lives in the TUI `/help` markdown guide (`tui/internal/tui/help/*.md`). Do NOT list all commands in your greeting. Just mention the `/` palette, `/help`, and `/suspend all`. You will introduce the rest progressively as they become relevant — your comment file has the full playbook.
+The canonical slash-command reference now lives in the `lingtai-tui-help` skill (`tui/internal/preset/skills/lingtai-tui-help/assets/slash-commands.<lang>.md`), surfaced in-app by `/help`. Do NOT list all commands in your greeting. Just mention the `/` palette, `/help`, and `/suspend all`. You will introduce the rest progressively as they become relevant — your comment file has the full playbook.

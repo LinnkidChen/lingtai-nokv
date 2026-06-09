@@ -3,77 +3,92 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	"github.com/anthropics/lingtai-tui/i18n"
+	"github.com/anthropics/lingtai-tui/internal/preset"
 )
 
-// TestEveryCommandHasHelpDoc guards the real maintenance risk: a slash command
-// is added to DefaultCommands() but ships without a help page. Every command
-// must have a non-empty embedded help/<name>.md.
-func TestEveryCommandHasHelpDoc(t *testing.T) {
-	for _, cmd := range DefaultCommands() {
-		doc := readHelpDoc(cmd.Name)
-		if strings.TrimSpace(doc) == "" {
-			t.Errorf("command %q has no embedded help/%s.md", cmd.Name, cmd.Name)
+// helpLangs are the UI languages /help supports, paired with the slash-command
+// asset each should resolve to.
+var helpLangs = []struct {
+	lang  string
+	asset string
+}{
+	{"en", "assets/slash-commands.en.md"},
+	{"zh", "assets/slash-commands.zh.md"},
+	{"wen", "assets/slash-commands.wen.md"},
+}
+
+// TestSlashCommandAssetForLang verifies the language→asset mapping, including the
+// English fallback for unknown locales.
+func TestSlashCommandAssetForLang(t *testing.T) {
+	for _, c := range helpLangs {
+		if got := slashCommandsAsset(c.lang); got != c.asset {
+			t.Errorf("slashCommandsAsset(%q) = %q, want %q", c.lang, got, c.asset)
+		}
+	}
+	if got := slashCommandsAsset("fr"); got != "assets/slash-commands.en.md" {
+		t.Errorf("slashCommandsAsset(unknown) = %q, want English asset", got)
+	}
+}
+
+// TestEveryCommandInAllAssets guards the real maintenance risk: a slash command
+// is added to DefaultCommands() but never described in the help assets. Every
+// command must appear (as "/<name>") in all three language assets.
+func TestEveryCommandInAllAssets(t *testing.T) {
+	for _, c := range helpLangs {
+		content, err := preset.ReadBundledSkillFile(helpSkillName, c.asset)
+		if err != nil {
+			t.Fatalf("reading %s: %v", c.asset, err)
+		}
+		if strings.TrimSpace(content) == "" {
+			t.Fatalf("%s is empty", c.asset)
+		}
+		for _, cmd := range DefaultCommands() {
+			if !strings.Contains(content, "/"+cmd.Name) {
+				t.Errorf("%s does not mention command /%s", c.asset, cmd.Name)
+			}
 		}
 	}
 }
 
-// TestOverviewDocEmbedded ensures the overview intro is embedded and non-empty.
-func TestOverviewDocEmbedded(t *testing.T) {
-	if strings.TrimSpace(readHelpDoc("overview")) == "" {
-		t.Fatal("help/overview.md is missing or empty")
+// TestLoadSlashCommandsSelectsAsset verifies /help loads the correct asset for
+// each UI language by checking the loaded content matches the embedded asset.
+func TestLoadSlashCommandsSelectsAsset(t *testing.T) {
+	for _, c := range helpLangs {
+		want, err := preset.ReadBundledSkillFile(helpSkillName, c.asset)
+		if err != nil {
+			t.Fatalf("reading %s: %v", c.asset, err)
+		}
+		if got := loadSlashCommands(c.lang); got != want {
+			t.Errorf("loadSlashCommands(%q) did not return the %s asset", c.lang, c.asset)
+		}
+	}
+	// Unknown locale falls back to English.
+	wantEN, _ := preset.ReadBundledSkillFile(helpSkillName, "assets/slash-commands.en.md")
+	if got := loadSlashCommands("fr"); got != wantEN {
+		t.Error("loadSlashCommands(unknown) did not fall back to the English asset")
 	}
 }
 
-// TestBuildHelpEntries verifies the viewer entries cover the overview plus one
-// entry per command, all with non-empty content.
-func TestBuildHelpEntries(t *testing.T) {
-	entries := buildHelpEntries()
+// TestBuildHelpEntriesPerLanguage verifies /help builds a single entry whose
+// content is the slash-command guide for the active UI language.
+func TestBuildHelpEntriesPerLanguage(t *testing.T) {
+	orig := i18n.Lang()
+	t.Cleanup(func() { i18n.SetLang(orig) })
 
-	cmds := DefaultCommands()
-	wantCount := len(cmds) + 1 // overview + one per command
-	if len(entries) != wantCount {
-		t.Fatalf("buildHelpEntries() returned %d entries, want %d", len(entries), wantCount)
-	}
-
-	// First entry is the overview.
-	if entries[0].Content == "" {
-		t.Error("overview entry has empty content")
-	}
-
-	// Remaining entries map 1:1 to commands, in order, with content.
-	for i, cmd := range cmds {
-		e := entries[i+1]
-		wantLabel := "/" + cmd.Name
-		if e.Label != wantLabel {
-			t.Errorf("entry %d: label = %q, want %q", i+1, e.Label, wantLabel)
+	for _, c := range helpLangs {
+		i18n.SetLang(c.lang)
+		entries := buildHelpEntries()
+		if len(entries) != 1 {
+			t.Fatalf("lang %s: buildHelpEntries() returned %d entries, want 1", c.lang, len(entries))
 		}
-		if strings.TrimSpace(e.Content) == "" {
-			t.Errorf("entry %d (%s): empty content", i+1, wantLabel)
+		want, err := preset.ReadBundledSkillFile(helpSkillName, c.asset)
+		if err != nil {
+			t.Fatalf("reading %s: %v", c.asset, err)
 		}
-	}
-}
-
-// TestHelpDocsHaveNoStrayFiles ensures no embedded help/*.md is orphaned — every
-// non-overview doc corresponds to a real command, so docs don't drift out of
-// sync after a command is removed.
-func TestHelpDocsHaveNoStrayFiles(t *testing.T) {
-	known := map[string]bool{"overview": true}
-	for _, cmd := range DefaultCommands() {
-		known[cmd.Name] = true
-	}
-
-	dirents, err := helpDocs.ReadDir("help")
-	if err != nil {
-		t.Fatalf("reading embedded help dir: %v", err)
-	}
-	for _, de := range dirents {
-		name := de.Name()
-		if !strings.HasSuffix(name, ".md") {
-			continue
-		}
-		stem := strings.TrimSuffix(name, ".md")
-		if !known[stem] {
-			t.Errorf("orphan help doc help/%s — no matching command", name)
+		if entries[0].Content != want {
+			t.Errorf("lang %s: entry content is not the %s asset", c.lang, c.asset)
 		}
 	}
 }

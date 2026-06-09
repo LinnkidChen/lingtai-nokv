@@ -1,79 +1,68 @@
 package tui
 
 import (
-	"embed"
 	"fmt"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/anthropics/lingtai-tui/i18n"
+	"github.com/anthropics/lingtai-tui/internal/preset"
 )
 
-// helpDocs holds the embedded markdown reference pages: one overview.md plus
-// one <command>.md per slash command. Bodies are English-only — they are
-// procedural reference content, not localized UI strings.
-//
-//go:embed help/*.md
-var helpDocs embed.FS
+// helpSkillName is the bundled utility skill that owns the canonical TUI help
+// content. /help is just a shortcut into this skill's slash-command assets.
+const helpSkillName = "lingtai-tui-help"
 
-// helpMissingDoc is shown when a command has a palette entry but no embedded
-// markdown page. The help_test.go test guards against this in practice, but a
-// graceful fallback keeps the viewer usable if a doc is ever removed.
-func helpMissingDoc(name string) string {
-	return fmt.Sprintf("# /%s\n\n%s", name, i18n.T("help.missing_doc"))
-}
-
-// readHelpDoc returns the embedded markdown for the named doc (without the
-// "help/" prefix or ".md" suffix), or "" if it is absent.
-func readHelpDoc(stem string) string {
-	data, err := helpDocs.ReadFile("help/" + stem + ".md")
-	if err != nil {
-		return ""
+// slashCommandsAsset returns the relative path (inside the lingtai-tui-help
+// skill) of the slash-command guide for the given UI language. Unknown locales
+// fall back to the English asset, which is canonical.
+func slashCommandsAsset(lang string) string {
+	switch lang {
+	case "zh", "wen":
+		return "assets/slash-commands." + lang + ".md"
+	default:
+		return "assets/slash-commands.en.md"
 	}
-	return string(data)
 }
 
-// buildHelpEntries assembles the markdown viewer entries for the /help view:
-// an "Overview" group with the intro, then a "Commands" group with one entry
-// per slash command in DefaultCommands() order. Each command entry carries the
-// same short palette description the user already sees, and the embedded
-// per-command markdown as content.
+// loadSlashCommands returns the slash-command help markdown for the given UI
+// language, read from the embedded lingtai-tui-help skill. It falls back to the
+// English asset if the language-specific asset is missing, and to a minimal
+// placeholder if even that cannot be read (which should never happen, since the
+// asset is embedded and covered by tests).
+func loadSlashCommands(lang string) string {
+	if content, err := preset.ReadBundledSkillFile(helpSkillName, slashCommandsAsset(lang)); err == nil {
+		return content
+	}
+	if content, err := preset.ReadBundledSkillFile(helpSkillName, slashCommandsAsset("en")); err == nil {
+		return content
+	}
+	return fmt.Sprintf("# %s\n\n%s", i18n.T("help.title"), i18n.T("help.missing_doc"))
+}
+
+// buildHelpEntries assembles the markdown viewer entries for the /help view. It
+// is a single entry: the slash-command guide for the current UI language, loaded
+// from the lingtai-tui-help skill. /help "jumps directly" to this asset rather
+// than maintaining a separate embedded help-doc system.
 func buildHelpEntries() []MarkdownEntry {
-	overviewGroup := i18n.T("help.group_overview")
-	commandsGroup := i18n.T("help.group_commands")
-
-	var entries []MarkdownEntry
-	entries = append(entries, MarkdownEntry{
+	return []MarkdownEntry{{
 		Label:   i18n.T("help.overview_label"),
-		Group:   overviewGroup,
-		Content: readHelpDoc("overview"),
-	})
-
-	for _, cmd := range DefaultCommands() {
-		content := readHelpDoc(cmd.Name)
-		if content == "" {
-			content = helpMissingDoc(cmd.Name)
-		}
-		entries = append(entries, MarkdownEntry{
-			Label:       "/" + cmd.Name,
-			Description: i18n.T(cmd.Description),
-			Group:       commandsGroup,
-			Content:     content,
-		})
-	}
-	return entries
+		Group:   i18n.T("help.group_commands"),
+		Content: loadSlashCommands(i18n.Lang()),
+	}}
 }
 
-// HelpModel is the /help view. It is a thin wrapper around MarkdownViewerModel:
-// an overview page plus a browsable per-command reference. Esc/q close the inner
-// viewer, which emits MarkdownViewerCloseMsg — App.Update already routes that
-// back to the mail view, so no extra close plumbing is needed here.
+// HelpModel is the /help view. It is a thin wrapper around MarkdownViewerModel
+// showing the lingtai-tui-help slash-command guide for the current UI language.
+// Esc/q close the inner viewer, which emits MarkdownViewerCloseMsg — App.Update
+// already routes that back to the mail view, so no extra close plumbing is
+// needed here.
 type HelpModel struct {
 	inner MarkdownViewerModel
 }
 
-// NewHelpModel builds the help view with all command pages loaded from the
-// embedded markdown.
+// NewHelpModel builds the help view with the slash-command guide for the active
+// UI language loaded from the bundled lingtai-tui-help skill.
 func NewHelpModel() HelpModel {
 	inner := NewMarkdownViewer(buildHelpEntries(), i18n.T("help.title"))
 	return HelpModel{inner: inner}

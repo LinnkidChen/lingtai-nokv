@@ -1075,6 +1075,20 @@ func BundledSkillNames() map[string]bool {
 	return names
 }
 
+// ReadBundledSkillFile returns the contents of a file inside a bundled skill,
+// read straight from the embedded skillsFS. The skill argument is the skill
+// directory name (e.g. "lingtai-tui-help"); relPath is the path inside that
+// skill, using forward slashes (e.g. "assets/slash-commands.en.md"). This lets
+// in-binary callers (like the TUI /help view) render bundled skill assets
+// without relying on the on-disk extraction in PopulateBundledLibrary.
+func ReadBundledSkillFile(skill, relPath string) (string, error) {
+	data, err := skillsFS.ReadFile("skills/" + skill + "/" + relPath)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // CovenantPath returns the absolute path to the covenant file for a language.
 func CovenantPath(globalDir, lang string) string {
 	return filepath.Join(globalDir, "covenant", lang, "covenant.md")

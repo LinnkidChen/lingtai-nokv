@@ -213,24 +213,10 @@ func TestBuildSkillFolderEntries_MinimaxCliCanonicalReference(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	skillsRoot := filepath.Join(filepath.Dir(thisFile), "..", "preset", "skills")
 
-	topBodyBytes, err := os.ReadFile(filepath.Join(skillsRoot, "minimax-cli", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	topBody := string(topBodyBytes)
-	for _, want := range []string{
-		"top-level entry point",
-		"canonical: ../swiss-knife/reference/minimax-cli/SKILL.md",
-		"../swiss-knife/reference/minimax-cli/SKILL.md",
-		"read-only pointer",
-		"Do not duplicate MiniMax command recipes here",
-	} {
-		if !strings.Contains(topBody, want) {
-			t.Errorf("top-level minimax-cli entry missing %q", want)
-		}
-	}
-	if strings.Contains(topBody, "## 3. Discover credentials without leaking them") {
-		t.Error("top-level minimax-cli should stay a thin pointer, not duplicate the canonical manual")
+	// The redundant top-level minimax-cli skill was removed; minimax-cli now lives
+	// only as a swiss-knife nested reference. Guard that the top-level copy is gone.
+	if _, err := os.Stat(filepath.Join(skillsRoot, "minimax-cli")); err == nil {
+		t.Error("top-level minimax-cli skill should no longer exist; it lives under swiss-knife/reference/minimax-cli")
 	}
 
 	canonicalBodyBytes, err := os.ReadFile(filepath.Join(skillsRoot, "swiss-knife", "reference", "minimax-cli", "SKILL.md"))
@@ -371,59 +357,6 @@ func TestBuildSkillFolderEntries_WebBrowsingNestedReferences(t *testing.T) {
 	}
 	if !strings.Contains(string(childBodyBytes), "Nested web-browsing reference") {
 		t.Error("nested tier quick refs child should identify itself as a nested web-browsing reference")
-	}
-}
-
-func TestBuildSkillFolderEntries_DailyReflectionNestedReferences(t *testing.T) {
-	_, thisFile, _, _ := runtime.Caller(0)
-	skillDir := filepath.Join(filepath.Dir(thisFile), "..", "preset", "skills", "daily-reflection")
-
-	entries := buildSkillFolderEntries(skillDir)
-	if len(entries) == 0 {
-		t.Fatal("no entries; is daily-reflection missing?")
-	}
-
-	rootBodyBytes, err := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	rootBody := string(rootBodyBytes)
-	for _, want := range []string{
-		"Nested reference catalog",
-		"reference/data-collection/SKILL.md",
-		"reference/analysis-reporting/SKILL.md",
-		"reference/operations/SKILL.md",
-		"system-manual/reference/sqlite-log-query/SKILL.md",
-	} {
-		if !strings.Contains(rootBody, want) {
-			t.Errorf("daily-reflection root missing %q", want)
-		}
-	}
-
-	labels := make(map[string]MarkdownEntry)
-	for _, e := range entries {
-		labels[e.Label] = e
-	}
-	for _, want := range []string{
-		"data-collection/SKILL.md",
-		"analysis-reporting/SKILL.md",
-		"operations/SKILL.md",
-	} {
-		e, ok := labels[want]
-		if !ok {
-			t.Fatalf("missing nested daily-reflection entry %q", want)
-		}
-		if e.Group != "reference" {
-			t.Errorf("entry %q group = %q, want reference", want, e.Group)
-		}
-	}
-
-	childBodyBytes, err := os.ReadFile(filepath.Join(skillDir, "reference", "data-collection", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(childBodyBytes), "Nested daily-reflection reference") {
-		t.Error("nested data collection child should identify itself as a nested daily-reflection reference")
 	}
 }
 

@@ -7,9 +7,11 @@ import (
 )
 
 // TestPreMoltLingtaiGuidance locks in the strengthened pre-molt guidance from
-// issue #175: the bundled covenant, procedures, and molt-template assets must
+// issue #175: the bundled covenant, procedures, and tutorial-guide assets must
 // operationally prompt agents to update lingtai after identity-changing work,
 // and must say that pad/knowledge/skills are not a substitute for lingtai.
+// (The detailed molt template now lives in the resident psyche-manual, not in a
+// bundled TUI utility skill.)
 //
 // Before this issue the guidance only asked the abstract "did who I am change?"
 // question, which agents skipped under molt pressure while dutifully tending
@@ -65,25 +67,6 @@ func TestPreMoltLingtaiGuidance(t *testing.T) {
 			"lingtai",
 			"safety posture",
 			"not a\nsubstitute", // wrapped across a line in the prose
-		)
-	})
-
-	t.Run("molt template checklist asks the identity question", func(t *testing.T) {
-		ref := read(t, skillsFS,
-			"skills/lingtai-molt-template/reference/molt-template.md")
-		mustContainAll(t, "molt-template reference", ref,
-			"operating style",
-			"safety posture",
-			"trust model",
-			"BEFORE you molt",
-			"as a substitute for lingtai",
-			"new operating principle", // post-skill-authoring nudge
-		)
-
-		skill := read(t, skillsFS, "skills/lingtai-molt-template/SKILL.md")
-		mustContainAll(t, "molt-template SKILL", skill,
-			"lingtai check",
-			"safety posture",
 		)
 	})
 

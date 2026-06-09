@@ -104,7 +104,7 @@ drill-down files, not standalone top-level skills.
 | Author or publish skills | `skills-manual` |
 | Customize, export, or package project methodology as a recipe | `lingtai-recipe` |
 | Work on portal APIs, topology recording, replay, or `.portal/` state | `lingtai-portal-guide` |
-| Prepare for a consequential molt during long dev work | `lingtai-molt-template` |
+| Prepare for a consequential molt during long dev work | `psyche-manual` |
 | Explain LingTai to an end user lesson-by-lesson | `tutorial-guide` |
 | Sweep the GitHub org read-only for current issues/PRs | `lingtai-repo-watch` |
 | Report a LingTai bug or stale documentation | `lingtai-issue-report` |

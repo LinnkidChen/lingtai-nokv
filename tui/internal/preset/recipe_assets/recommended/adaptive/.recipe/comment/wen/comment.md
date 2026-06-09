@@ -19,7 +19,7 @@ After the demo, offer to continue exploring or switch to real work.
 
 ## Slash Commands — Contextual Suggestions
 
-Use `/help` as the canonical human-facing markdown reference for slash commands. The source docs live in `tui/internal/tui/help/*.md`; do not maintain a second full command explanation in recipes. Suggest commands one at a time, when the moment is right:
+Use `/help` as the canonical human-facing markdown reference for slash commands. The source docs live in the `lingtai-tui-help` skill (`tui/internal/preset/skills/lingtai-tui-help/assets/slash-commands.<lang>.md`); do not maintain a second full command explanation in recipes. Suggest commands one at a time, when the moment is right:
 
 | Context | Suggest |
 |---------|---------|

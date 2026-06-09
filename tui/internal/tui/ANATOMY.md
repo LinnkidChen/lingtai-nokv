@@ -39,7 +39,8 @@ Screen routing is centralized in the `App` struct (`app.go`), which holds every 
 - **`daemons.go:30-798`** — `DaemonsModel`. Read-only daemon run browser for `/daemons`: discovers agents with `fs.BuildNetwork`, opens a Ctrl+T agent picker, scans `<agent>/daemons/em-*/daemon.json`, `logs/events.jsonl`, `history/chat_history.jsonl`, and `result.txt`, then renders a left run list and right detail pane with task, metadata, full chat_history interactions, full event/tool records, and full result text. Constructor: `NewDaemonsModel` (`daemons.go:97`). Wired to `/daemons`.
 - **`nirvana.go:47-209`** — `NirvanaModel`. Confirmation screen for wiping `.lingtai/`. Constructor: `NewNirvanaModel` (`nirvana.go:56`). Emits `NirvanaDoneMsg` → triggers first-run wizard flow.
 - **`projects.go:35-448`** — `ProjectsModel`. Global project list browser. Constructor: `NewProjectsModel` (`projects.go:50`). Wired to `/projects`.
-- **`mdviewer.go:40-518`** — `MarkdownViewerModel`. Generic markdown display with sidebar navigation. Used by `/skills` detail views, recipe previews, and agora browse results.
+- **`mdviewer.go:40-518`** — `MarkdownViewerModel`. Generic markdown display with sidebar navigation. Used by `/skills` detail views, recipe previews, agora browse results, and `/help`.
+- **`help.go:1-79`** — `HelpModel`. Thin `MarkdownViewerModel` wrapper for `/help`. No embedded help docs of its own: it reads the slash-command guide from the bundled `lingtai-tui-help` skill via `preset.ReadBundledSkillFile`, picking the asset for the current UI language (`i18n.Lang()` → `assets/slash-commands.<lang>.md`, English fallback). Constructor: `NewHelpModel` (`help.go:66`). Wired to `/help`.
 - **`setup.go:42-242`** — `SetupModel` (legacy). Older `/setup` form (API key, preset selection). Constructor: `NewSetupModel` (`setup.go:54`). Mostly subsumed by `firstrun.go`'s setup mode, kept for the recovery path.
 
 ### Non-screen shared types and helpers

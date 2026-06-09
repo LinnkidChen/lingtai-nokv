@@ -87,17 +87,11 @@ func TestPopulateBundledLibrary_MinimaxCliCanonicalReference(t *testing.T) {
 	globalDir := t.TempDir()
 	PopulateBundledLibrary("", globalDir)
 
-	topPath := filepath.Join(globalDir, "utilities", "minimax-cli", "SKILL.md")
-	topBodyBytes, err := os.ReadFile(topPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	topBody := string(topBodyBytes)
-	if !strings.Contains(topBody, "../swiss-knife/reference/minimax-cli/SKILL.md") {
-		t.Error("top-level minimax-cli should point at the canonical swiss-knife nested reference")
-	}
-	if strings.Contains(topBody, "## 3. Discover credentials without leaking them") {
-		t.Error("top-level minimax-cli should not duplicate the canonical manual")
+	// The top-level minimax-cli skill was removed; minimax-cli now lives only as
+	// a swiss-knife nested reference. Guard that the redundant top-level copy does
+	// not come back.
+	if _, err := os.Stat(filepath.Join(globalDir, "utilities", "minimax-cli")); err == nil {
+		t.Error("top-level minimax-cli utility should no longer be bundled; it lives under swiss-knife/reference/minimax-cli")
 	}
 
 	canonicalPath := filepath.Join(globalDir, "utilities", "swiss-knife", "reference", "minimax-cli", "SKILL.md")
@@ -137,26 +131,6 @@ func TestPopulateBundledLibrary_WebBrowsingNestedReferences(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(utilitiesDir, rel)); err != nil {
 			t.Fatalf("expected bundled web-browsing file %s to be extracted: %v", rel, err)
-		}
-	}
-}
-
-// TestPopulateBundledLibrary_DailyReflectionNestedReferences verifies that the
-// embedded utility-library copier preserves daily-reflection's nested reference
-// tree on disk.
-func TestPopulateBundledLibrary_DailyReflectionNestedReferences(t *testing.T) {
-	globalDir := t.TempDir()
-	PopulateBundledLibrary("", globalDir)
-
-	utilitiesDir := filepath.Join(globalDir, "utilities", "daily-reflection")
-	for _, rel := range []string{
-		"SKILL.md",
-		"reference/data-collection/SKILL.md",
-		"reference/analysis-reporting/SKILL.md",
-		"reference/operations/SKILL.md",
-	} {
-		if _, err := os.Stat(filepath.Join(utilitiesDir, rel)); err != nil {
-			t.Fatalf("expected bundled daily-reflection file %s to be extracted: %v", rel, err)
 		}
 	}
 }
