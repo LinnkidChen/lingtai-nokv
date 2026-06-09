@@ -17,6 +17,7 @@ Given a DOI / arXiv ID / paper URL, retrieve the paper's full text (PDF or plain
 4. **Download PDF** — Direct download via curl / requests.
 5. **(If OA channels fail, DOI is a supported publisher) Publisher-page extraction** — Nature/APS/AIP/IOP/Cambridge → structured Markdown with LaTeX preserved. See [publisher-page-extraction.md](publisher-page-extraction.md).
 5b. **(If paywalled but you have licensed access) Authorized institutional publisher** — official DOI landing page → same-host publisher PDF → validate `%PDF-` bytes + Content-Type → save with provenance. No paywall bypass, no credential/cookie handling. See [authorized-publisher-access.md](authorized-publisher-access.md).
+6a. **(If you have a batch + the user's Zotero) Zotero institutional full-text handoff** — agent stages the failed batch into Zotero Desktop with a dated tag, the **human** runs UI Find Full Text (institutional access), agent harvests resulting PDFs with provenance. Human-in-the-loop; no UI automation/TCC bypass, no credential handling. See [zotero-institutional-fulltext-handoff.md](zotero-institutional-fulltext-handoff.md).
 6. **(If all of the above fail) LibGen fallback** — See [libgen-fallback.md](libgen-fallback.md) for live mirror discovery and download.
 6. **(If web page, not PDF) Extract web page body** — Select BeautifulSoup or Camoufox based on the site.
 7. **Extract text from PDF** — PyMuPDF text extraction.
@@ -35,7 +36,7 @@ What is the input?
 │   ├─ CrossRef resolve metadata
 │   ├─ Unpaywall find free PDF
 │   │   ├─ Found → Download PDF → Extract text
-│   │   └─ Not found → CORE → Europe PMC → arXiv → publisher-page extract (see publisher-page-extraction.md) → authorized institutional publisher (if licensed, see authorized-publisher-access.md) → LibGen (last resort, see libgen-fallback.md)
+│   │   └─ Not found → CORE → Europe PMC → arXiv → publisher-page extract (see publisher-page-extraction.md) → authorized institutional publisher (if licensed, see authorized-publisher-access.md) → Zotero institutional handoff (human-in-the-loop, batch, see zotero-institutional-fulltext-handoff.md) → LibGen (last resort, see libgen-fallback.md)
 │   └─ OpenAlex supplementary metadata
 │
 ├─ arXiv ID (e.g. 2301.00001)
@@ -317,4 +318,5 @@ def auto_select_tier(url: str) -> tuple[int, str]:
 - Citation network & trend analysis → See [pipeline-scholar-analysis.md](pipeline-scholar-analysis.md)
 - Format references → See [pipeline-citation-tracking.md](pipeline-citation-tracking.md)
 - Authorized institutional publisher access (Tier 5b) → See [authorized-publisher-access.md](authorized-publisher-access.md)
+- Zotero institutional full-text handoff, human-in-the-loop (Tier 6a) → See [zotero-institutional-fulltext-handoff.md](zotero-institutional-fulltext-handoff.md)
 - Comprehensive entry point: What information do I have, and which API should I use? → See [decision-tree.md](decision-tree.md)

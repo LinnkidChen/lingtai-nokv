@@ -213,5 +213,6 @@ store (`scripts/probe_authorized_fulltext.py`) that motivated issue #140.
 
 - [pipeline-obtain-pdf.md](pipeline-obtain-pdf.md) — the full acquisition ladder
 - [publisher-page-extraction.md](publisher-page-extraction.md) — Tier 5, the HTML→Markdown extractor (issue #136 install caveat)
+- [zotero-institutional-fulltext-handoff.md](zotero-institutional-fulltext-handoff.md) — Tier 6a, the human-in-the-loop Zotero handoff to try *after* this probe misses on a batch
 - [libgen-fallback.md](libgen-fallback.md) — the tier *below* this one, with its own (stricter) legal gate
 - [api-unpaywall.md](api-unpaywall.md) — always try OA first

@@ -177,7 +177,7 @@ If one pattern fails, try the next. The detail page (`ads.php?md5=...`) usually 
 LibGen sits at the end of the acquisition chain:
 
 ```
-Unpaywall → CORE → Europe PMC → arXiv → Publisher OA → Authorized publisher (if licensed) → LibGen (last resort)
+Unpaywall → CORE → Europe PMC → arXiv → Publisher OA → Authorized publisher (if licensed) → Zotero institutional handoff (human-in-the-loop, if applicable) → LibGen (last resort)
 ```
 
 **Before trying LibGen**, confirm you have exhausted all legitimate channels:
@@ -187,6 +187,7 @@ Unpaywall → CORE → Europe PMC → arXiv → Publisher OA → Authorized publ
 4. arXiv: no preprint version
 5. Publisher page: no free access
 6. Authorized publisher: no licensed institutional access available (or `--no-institutional` set) — see [authorized-publisher-access.md](authorized-publisher-access.md)
+7. Zotero institutional handoff: not applicable (no batch, or the user has no Zotero Desktop on an institutional network), or the human's Find Full Text did not resolve it — see [zotero-institutional-fulltext-handoff.md](zotero-institutional-fulltext-handoff.md)
 
 Only then proceed to LibGen.
 
@@ -195,6 +196,8 @@ Only then proceed to LibGen.
 ## See Also
 
 - [pipeline-obtain-pdf.md](pipeline-obtain-pdf.md) — full PDF acquisition chain
+- [authorized-publisher-access.md](authorized-publisher-access.md) — Tier 5b, licensed-publisher PDF (try before LibGen)
+- [zotero-institutional-fulltext-handoff.md](zotero-institutional-fulltext-handoff.md) — Tier 6a, human-in-the-loop Zotero handoff (try before LibGen)
 - [api-unpaywall.md](api-unpaywall.md) — OA status check (try first)
 - [api-core.md](api-core.md) — repository full text (try second)
 - [api-europe-pmc.md](api-europe-pmc.md) — biomedical full text (try third)
