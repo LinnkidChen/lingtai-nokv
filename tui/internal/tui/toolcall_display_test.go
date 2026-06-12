@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -190,5 +192,105 @@ func TestRenderMessages_DoesNotSeparateSameApiCallGroup(t *testing.T) {
 	})
 	if strings.Contains(out, "\n\n") {
 		t.Fatalf("same api_call_id should render as one group without blank separator: %q", out)
+	}
+}
+
+func TestTextOutputGroupSeparatorBefore_ExplicitApiCallIDChange(t *testing.T) {
+	prev := &ChatMessage{Type: "text_output", ApiCallID: "api_one"}
+	cur := ChatMessage{Type: "text_output", ApiCallID: "api_two"}
+	if !textOutputGroupSeparatorBefore(prev, cur) {
+		t.Errorf("text_output entries from different api_call_id values should be separated")
+	}
+}
+
+func TestTextOutputGroupSeparatorBefore_ExplicitApiCallIDSameGroup(t *testing.T) {
+	prev := &ChatMessage{Type: "text_output", ApiCallID: "api_one"}
+	cur := ChatMessage{Type: "text_output", ApiCallID: "api_one"}
+	if textOutputGroupSeparatorBefore(prev, cur) {
+		t.Errorf("text_output entries from the same api_call_id should stay grouped")
+	}
+}
+
+func TestTextOutputGroupSeparatorBefore_NoMetadataStaysGrouped(t *testing.T) {
+	prev := &ChatMessage{Type: "text_output"}
+	cur := ChatMessage{Type: "text_output"}
+	if textOutputGroupSeparatorBefore(prev, cur) {
+		t.Errorf("legacy text_output entries without grouping metadata should stay grouped")
+	}
+}
+
+func TestTextOutputGroupSeparatorBefore_NonTextBoundariesNoSeparator(t *testing.T) {
+	cases := []struct{ prev, cur string }{
+		{"thinking", "text_output"},
+		{"text_output", "thinking"},
+		{"tool_result", "text_output"},
+		{"text_output", "tool_call"},
+	}
+	for _, c := range cases {
+		prev := &ChatMessage{Type: c.prev, ApiCallID: "api_one"}
+		cur := ChatMessage{Type: c.cur, ApiCallID: "api_two"}
+		if textOutputGroupSeparatorBefore(prev, cur) {
+			t.Errorf("non-text-output boundary (%q→%q) must not get a text-output separator", c.prev, c.cur)
+		}
+	}
+}
+
+func TestRenderMessages_InsertsBlankLineBetweenTextOutputApiCallGroups(t *testing.T) {
+	m := MailModel{width: 100}
+	out := m.renderMessages([]ChatMessage{
+		{Type: "text_output", Body: "first answer", ApiCallID: "api_one"},
+		{Type: "text_output", Body: "second answer", ApiCallID: "api_two"},
+	})
+	if !strings.Contains(out, "first answer") || !strings.Contains(out, "second answer") {
+		t.Fatalf("rendered output missing text_output bodies: %q", out)
+	}
+	if !strings.Contains(out, "\n\n") {
+		t.Fatalf("expected a blank separator line between text_output api groups, got %q", out)
+	}
+}
+
+func TestRenderMessages_DoesNotSeparateSameTextOutputApiCallGroup(t *testing.T) {
+	m := MailModel{width: 100}
+	out := m.renderMessages([]ChatMessage{
+		{Type: "text_output", Body: "first chunk", ApiCallID: "api_one"},
+		{Type: "text_output", Body: "second chunk", ApiCallID: "api_one"},
+	})
+	if strings.Contains(out, "\n\n") {
+		t.Fatalf("same text_output api_call_id should render as one group without blank separator: %q", out)
+	}
+}
+
+func TestBuildMessagesAssignsApiCallIDToTextOutput(t *testing.T) {
+	humanDir := t.TempDir()
+	orchDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(orchDir, "logs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	events := strings.Join([]string{
+		`{"ts":1781300000,"type":"llm_response","api_call_id":"api_one"}`,
+		`{"ts":1781300001,"type":"text_output","text":"first answer"}`,
+		`{"ts":1781300002,"type":"llm_call","api_call_id":"api_two"}`,
+		`{"ts":1781300003,"type":"llm_response","api_call_id":"api_two"}`,
+		`{"ts":1781300004,"type":"text_output","text":"second answer"}`,
+	}, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(orchDir, "logs", "events.jsonl"), []byte(events), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewMailModel(humanDir, "human", t.TempDir(), orchDir, "agent", unlimitedPageSize, "", "en", false, 0)
+	m.verbose = verboseThinking
+	m.buildMessages()
+
+	var textOutputs []ChatMessage
+	for _, msg := range m.messages {
+		if msg.Type == "text_output" {
+			textOutputs = append(textOutputs, msg)
+		}
+	}
+	if len(textOutputs) != 2 {
+		t.Fatalf("got %d text_output messages, want 2: %#v", len(textOutputs), textOutputs)
+	}
+	if textOutputs[0].ApiCallID != "api_one" || textOutputs[1].ApiCallID != "api_two" {
+		t.Fatalf("text_output api_call_id values = %q, %q; want api_one, api_two", textOutputs[0].ApiCallID, textOutputs[1].ApiCallID)
 	}
 }

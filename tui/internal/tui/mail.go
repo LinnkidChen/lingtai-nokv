@@ -44,7 +44,7 @@ type ChatMessage struct {
 	Sources     []string             // for Type=="notification": source keys (email, soul, system, ...)
 	Source      string               // for Type=="aed": subtype ("attempt" | "exhausted" | "timeout")
 	Meta        *fs.NotificationMeta // for Type=="notification": kernel vital signs at injection time (issue #40)
-	ApiCallID   string               // for tool_call/tool_result: LLM API round-trip grouping id
+	ApiCallID   string               // for text_output/tool_call/tool_result: LLM API round-trip grouping id
 }
 
 // ViewChangeMsg requests the app to switch views.
@@ -400,7 +400,7 @@ func (m *MailModel) buildMessages() {
 			}
 		case "llm_call":
 			currentApiCallID = ""
-		case "tool_call", "tool_result":
+		case "text_output", "tool_call", "tool_result":
 			if e.ApiCallID == "" {
 				e.ApiCallID = currentApiCallID
 			}
@@ -892,9 +892,13 @@ func (m MailModel) renderMessages(msgs []ChatMessage) string {
 
 	var b strings.Builder
 	var prevVisibleTool *ChatMessage
+	var prevVisibleTextOutput *ChatMessage
 	for _, msg := range msgs {
 		if !isToolMessageType(msg.Type) {
 			prevVisibleTool = nil
+		}
+		if msg.Type != "text_output" {
+			prevVisibleTextOutput = nil
 		}
 		switch msg.Type {
 		case "thinking", "diary", "text_input", "text_output", "tool_call", "tool_result":
@@ -907,6 +911,9 @@ func (m MailModel) renderMessages(msgs []ChatMessage) string {
 			tsPrefix := ""
 			switch msg.Type {
 			case "thinking", "diary", "text_input", "text_output":
+				if textOutputGroupSeparatorBefore(prevVisibleTextOutput, msg) {
+					b.WriteString("\n")
+				}
 				evStyle = thinkingStyle
 			default:
 				if toolGroupSeparatorBefore(prevVisibleTool, msg) {
@@ -923,6 +930,10 @@ func (m MailModel) renderMessages(msgs []ChatMessage) string {
 			wrapped := lipgloss.NewStyle().Width(wrapWidth).Render(tsPrefix + "[" + msg.Type + "] " + body)
 			for _, line := range strings.Split(wrapped, "\n") {
 				b.WriteString(evStyle.Render("  "+RuneBullet+" "+line) + "\n")
+			}
+			if msg.Type == "text_output" {
+				msgCopy := msg
+				prevVisibleTextOutput = &msgCopy
 			}
 			if msg.Type == "tool_call" || msg.Type == "tool_result" {
 				msgCopy := msg

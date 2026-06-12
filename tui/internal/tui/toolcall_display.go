@@ -62,3 +62,20 @@ func toolGroupSeparatorBefore(prev *ChatMessage, cur ChatMessage) bool {
 	// llm_response markers before reaching the renderer.
 	return prev.Type == "tool_result" && cur.Type == "tool_call"
 }
+
+func isTextOutputMessageType(t string) bool {
+	return t == "text_output"
+}
+
+// textOutputGroupSeparatorBefore reports whether a blank separator line should
+// be rendered before the current text_output entry to mirror tool-call grouping
+// by the LLM API response that produced the assistant text.
+func textOutputGroupSeparatorBefore(prev *ChatMessage, cur ChatMessage) bool {
+	if prev == nil || !isTextOutputMessageType(prev.Type) || !isTextOutputMessageType(cur.Type) {
+		return false
+	}
+	if prev.ApiCallID == "" && cur.ApiCallID == "" {
+		return false
+	}
+	return prev.ApiCallID != cur.ApiCallID
+}
