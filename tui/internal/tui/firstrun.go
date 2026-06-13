@@ -3290,6 +3290,19 @@ func (m *FirstRunModel) enterAgentPresets() tea.Cmd {
 				}
 			}
 		}
+
+		// If the picker cursor points at a saved preset that was not found
+		// in the existing allowed list (e.g. the user just created it in the
+		// preset editor), auto-check it so a just-added preset doesn't silently
+		// stay unauthorized. The user can still uncheck it with [space].
+		if m.cursor >= 0 {
+			for r, idx := range m.savedPresetIdx {
+				if idx == m.cursor && !m.presetAllowed[r] {
+					m.presetAllowed[r] = true
+					break
+				}
+			}
+		}
 	}
 
 	return nil
@@ -4183,7 +4196,22 @@ func (m FirstRunModel) performSetupSaveOnly() (FirstRunModel, tea.Cmd) {
 		return m, nil
 	}
 	if m.setupMode {
-		propagatePresetPolicyToNetwork(m.baseDir, dirName, presetCanonicalRef(p), m.pendingAgentOpts.AllowedPresets)
+		// Derive the real policy default ref for propagation. When the user
+		// chose "Keep current preset" (cursor == -1), p is the synthetic
+		// keep_current preset whose presetCanonicalRef would produce a
+		// non-existent path. Use the existing init.json's manifest.preset.default
+		// instead so propagation never broadcasts keep_current.json to peers.
+		policyDefaultRef := presetCanonicalRef(p)
+		if m.cursor == -1 && m.setupKeepInitJSON != nil {
+			if mn, ok := m.setupKeepInitJSON["manifest"].(map[string]interface{}); ok {
+				if pre, ok := mn["preset"].(map[string]interface{}); ok {
+					if def, ok := pre["default"].(string); ok && def != "" {
+						policyDefaultRef = def
+					}
+				}
+			}
+		}
+		propagatePresetPolicyToNetwork(m.baseDir, dirName, policyDefaultRef, m.pendingAgentOpts.AllowedPresets)
 	}
 	return m, func() tea.Msg { return SetupSavedMsg{} }
 }

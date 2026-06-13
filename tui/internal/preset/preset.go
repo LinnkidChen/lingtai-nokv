@@ -513,6 +513,17 @@ func RefFor(p Preset) string {
 	return "~/.lingtai-tui/presets/" + subdir + "/" + p.Name + ".json"
 }
 
+// isSyntheticPreset reports whether p is the in-memory-only "Keep current
+// preset" sentinel that NewSetupModeModel builds from an existing init.json.
+// It has no backing file on disk; RefFor would otherwise derive a non-existent
+// path like ~/.lingtai-tui/presets/saved/keep_current.json.
+//
+// Be deliberately narrow here: SourceUnknown also appears on hand-built presets
+// in tests or callers that intentionally want RefFor's saved/ fallback.
+func isSyntheticPreset(p Preset) bool {
+	return p.Source == SourceUnknown && p.Name == "keep_current"
+}
+
 // ResolvedRef is a single entry in ResolveRefs's output. It captures
 // everything a UI surface (the kanban Presets section in particular)
 // needs to render an at-a-glance health check for a preset path
@@ -1430,6 +1441,28 @@ func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDi
 									if s, ok := e.(string); ok && s != "" {
 										existingAllowed = append(existingAllowed, s)
 									}
+								}
+							}
+							// When the caller passed a synthetic preset (e.g. the
+							// "Keep current preset" sentinel Name="keep_current"
+							// built in NewSetupModeModel), RefFor() above produces
+							// a path that doesn't correspond to any real file.
+							// Preserve the existing on-disk default ref so we never
+							// write keep_current.json into manifest.preset.{default,allowed}.
+							// Older init.json files may lack manifest.preset.default; in that
+							// case fall back to the real active ref instead.
+							if isSyntheticPreset(p) {
+								syntheticRef := RefFor(p)
+								if existingDef, ok := pre["default"].(string); ok && existingDef != "" {
+									presetRef = existingDef
+								} else if activeRef != "" && activeRef != syntheticRef {
+									presetRef = activeRef
+								}
+								// activeRef was already set to the existing active above; if it
+								// was still pointing at the synthetic ref, snap it to the real
+								// policy default.
+								if activeRef == syntheticRef {
+									activeRef = presetRef
 								}
 							}
 						}
