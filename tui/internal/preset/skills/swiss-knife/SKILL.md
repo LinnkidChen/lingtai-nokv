@@ -3,8 +3,7 @@ name: swiss-knife
 description: >
   Umbrella router for small, focused CLI tools and integrations. Read this
   when a task might need one of the bundled utility references, then load only
-  the nested reference that matches the need: claude-code, openai-codex, or
-  opencode for coding CLIs; minimax-cli for MiniMax media/TTS/vision; vision for
+  the nested reference that matches the need: minimax-cli for MiniMax media/TTS/vision; vision for
   image understanding (describe/OCR/critique); listen for local audio
   transcription and music analysis; academic-research for fetching papers,
   citation networks, and LaTeX writing; dj for journal-inspired music
@@ -17,7 +16,7 @@ description: >
   keys, missing credentials, unreachable endpoints, invalid model/config). This
   parent is the route map; each nested reference is self-contained under
   `reference/<name>/SKILL.md`.
-version: 2.3.0
+version: 2.4.0
 tags: [utilities, umbrella, toolkit, nested-skill]
 ---
 
@@ -32,26 +31,15 @@ assets.
 
 ```yaml
 nested_references:
-  - name: claude-code
-    location: reference/claude-code/SKILL.md
+  - name: bash-cli-harnesses
+    location: bash-manual reference/bash-*/SKILL.md
     description: >
-      Nested swiss-knife reference for Claude Code CLI. Read this when you need
-      to delegate code implementation, patch writing, documentation, refactoring,
-      or review to Anthropic's Claude Code CLI, including guidance on async
-      supervision, model choice, and responsiveness risks.
-  - name: openai-codex
-    location: reference/openai-codex/SKILL.md
-    description: >
-      Nested swiss-knife reference for OpenAI Codex CLI. Read this when the
-      human asks to use Codex directly, compare Codex with Claude Code, or use
-      Codex-specific local-agent capabilities such as remote control, Vim editing,
-      plugins, hooks, and browser integration.
-  - name: opencode
-    location: reference/opencode/SKILL.md
-    description: >
-      Nested swiss-knife reference for OpenCode CLI. Read this when the human
-      asks to use OpenCode as a local coding-agent CLI, compare coding CLIs, or
-      script provider-flexible `opencode run` / `opencode serve` workflows.
+      Coding-agent CLIs such as Claude Code, OpenAI Codex, OpenCode, Cursor
+      Agent, MiMo Code, Qwen Code, Oh-My-Pi, Gemini CLI, Aider, Goose,
+      OpenHands, and Crush are now owned by `bash-manual` because they run as
+      long-lived shell subprocesses. Read `bash-manual` and then the matching
+      nested `reference/bash-*/SKILL.md`; Swiss Knife only keeps non-bash utility
+      references.
   - name: minimax-cli
     location: reference/minimax-cli/SKILL.md
     description: >
@@ -137,9 +125,7 @@ nested_references:
 
 | Need | Read |
 |---|---|
-| Delegate code work to Claude Code CLI | `reference/claude-code/SKILL.md` |
-| Use or compare OpenAI Codex CLI | `reference/openai-codex/SKILL.md` |
-| Use or compare OpenCode CLI | `reference/opencode/SKILL.md` |
+| Run or compare coding-agent CLIs such as Claude Code, Codex, OpenCode, Cursor Agent, MiMo Code, Qwen Code, Oh-My-Pi, Gemini CLI, Aider, Goose, OpenHands, or Crush | Load `bash-manual`, then the matching `reference/bash-*/SKILL.md` |
 | Generate images, video, music, TTS, or MiniMax shell vision | `reference/minimax-cli/SKILL.md` |
 | Describe, OCR, or critique an image (pick the cheapest available path) | `reference/vision/SKILL.md` |
 | Transcribe speech/voice notes or analyze music locally (no API key) | `reference/listen/SKILL.md` |
@@ -147,8 +133,8 @@ nested_references:
 | Compose music from a project journal, session mood, or requested genre | `reference/dj/SKILL.md` |
 | Report token usage or model costs | `reference/token-usage/SKILL.md` |
 | Produce standalone HTML reports/dashboards/memos | `reference/html-report/SKILL.md` |
-| Discover/configure Xiaomi MiMo | `reference/xiaomi-mimo/SKILL.md` |
-| Discover/configure Zhipu / Z.AI coding-plan capabilities | `reference/zhipu-coding-plan/SKILL.md` |
+| Discover/configure Xiaomi MiMo provider/model access | `reference/xiaomi-mimo/SKILL.md`; for `mimocode` shell execution, load `bash-manual` → `reference/bash-mimocode/SKILL.md` |
+| Discover/configure Zhipu / Z.AI coding-plan capabilities | `reference/zhipu-coding-plan/SKILL.md`; for shell CLI harness execution, load `bash-manual` first |
 | Create or automate a headless LingTai bot project, including Telegram bots | `reference/headless-bot/SKILL.md` |
 | Practice idle curiosity when there is no pending task or human waiting | `reference/find-something-to-do/SKILL.md` |
 | Health-check saved presets (read-only): classify expired keys, missing credentials, unreachable endpoints, invalid model/config | `reference/preset-health/SKILL.md` |

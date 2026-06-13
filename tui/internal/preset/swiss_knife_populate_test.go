@@ -19,9 +19,6 @@ func TestPopulateBundledLibrary_SwissKnifeNestedReferences(t *testing.T) {
 	utilitiesDir := filepath.Join(globalDir, "utilities", "swiss-knife")
 	for _, rel := range []string{
 		"SKILL.md",
-		"reference/claude-code/SKILL.md",
-		"reference/openai-codex/SKILL.md",
-		"reference/opencode/SKILL.md",
 		"reference/minimax-cli/SKILL.md",
 		"reference/vision/SKILL.md",
 		"reference/vision/scripts/describe.py",
@@ -57,6 +54,9 @@ func TestPopulateBundledLibrary_SwissKnifeNestedReferences(t *testing.T) {
 		"claude-code/SKILL.md",
 		"openai-codex/SKILL.md",
 		"opencode/SKILL.md",
+		"reference/claude-code/SKILL.md",
+		"reference/openai-codex/SKILL.md",
+		"reference/opencode/SKILL.md",
 		"token-usage/SKILL.md",
 		"html-report/SKILL.md",
 		"headless-telegram-bot/SKILL.md",
