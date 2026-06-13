@@ -4,9 +4,10 @@ description: >
   Router for contributing to the LingTai project. Use this when you are about
   to change LingTai code or docs, set up a dev environment, navigate the Go
   TUI/portal repo or Python kernel, develop MCP addons, prepare a release,
-  troubleshoot a running network, audit security, or govern avatars. This is
-  for developers and contributors; for end-user lessons, use tutorial-guide.
-version: 2.2.0
+  troubleshoot a running network, audit security, govern avatars, or prepare a
+  publication-bound release workflow. This is for developers and contributors;
+  for end-user lessons, use tutorial-guide.
+version: 2.3.0
 ---
 
 # LingTai Developer Guide
@@ -63,8 +64,15 @@ drill-down files, not standalone top-level skills.
 - name: dev-guide-releasing
   location: reference/releasing/SKILL.md
   description: |
-    Release procedures for TUI/portal and kernel changes, including readiness
-    checks, changelog/reporting expectations, and release artifact guidance.
+    Compact release procedures for TUI/portal and kernel changes, including
+    readiness checks, release artifact guidance, and basic publication steps.
+- name: dev-guide-release-workflow
+  location: reference/release-workflow/SKILL.md
+  description: |
+    Full consequential release workflow for paired TUI/Portal + kernel release
+    planning, clean worktrees, validation gates, GitHub/PyPI/Homebrew publishing
+    boundaries, website release-log/blog drafting, and the reusable release blog
+    template.
 - name: dev-guide-debug-troubleshoot
   location: reference/debug-troubleshoot/SKILL.md
   description: |
@@ -90,7 +98,7 @@ drill-down files, not standalone top-level skills.
 | Set up a local development environment | `reference/setup/SKILL.md` |
 | Make a contribution in TUI, portal, kernel, addons, or skills | `reference/contributing/SKILL.md` |
 | Avoid common footguns while coding | `reference/gotchas/SKILL.md` |
-| Ship a TUI/portal or kernel release | `reference/releasing/SKILL.md` |
+| Ship a TUI/portal or kernel release | `reference/releasing/SKILL.md`; for consequential paired releases or release blogs, also read `reference/release-workflow/SKILL.md` |
 | Diagnose a stuck, errored, or misbehaving LingTai network | `reference/debug-troubleshoot/SKILL.md` |
 | Audit secrets, permissions, MCP config, channels, or data exposure | `reference/security-audit/SKILL.md` |
 | Operate an avatar network over time | `reference/network-governance/SKILL.md` |
@@ -126,9 +134,7 @@ drill-down files, not standalone top-level skills.
   `lingtai-kernel-anatomy` → relevant kernel anatomy/code → kernel tests.
 - **"An agent is quiet or unreachable"** → `reference/debug-troubleshoot/SKILL.md`
   → `lingtai-doctor` if local health surfaces disagree.
-- **"I am preparing a release"** → `reference/releasing/SKILL.md` and use
-  `reference/release-html-log-template.html` as the starter HTML report if you do
-  not already have a stronger release-specific design.
+- **"I am preparing a release"** → `reference/releasing/SKILL.md`; for paired TUI/kernel releases, website release blogs, or publication-bound checklists, continue to `reference/release-workflow/SKILL.md` and its `assets/release-blog-template.md`.
 - **"This broad dev task needs triage"** → run the read-only portfolio sweep in
   `reference/contributing/SKILL.md`, then ask for authorization before mutating
   GitHub state.
@@ -148,6 +154,8 @@ lingtai-dev-guide/
     ├── gotchas/SKILL.md
     ├── releasing/SKILL.md
     ├── release-html-log-template.html
+    ├── release-workflow/SKILL.md
+    ├── release-workflow/assets/release-blog-template.md
     ├── debug-troubleshoot/SKILL.md
     ├── security-audit/SKILL.md
     └── network-governance/SKILL.md
