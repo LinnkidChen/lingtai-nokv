@@ -163,7 +163,7 @@ drill-down files, not standalone top-level skills.
   `lingtai-kernel-anatomy` → relevant kernel anatomy/code → kernel tests.
 - **"An agent is quiet or unreachable"** → `reference/debug-troubleshoot/SKILL.md`
   → `lingtai-doctor` if local health surfaces disagree.
-- **"I am preparing a release"** → `reference/releasing/SKILL.md` for the overview and authorization boundary, then `reference/release-workflow/SKILL.md` for the full publishing checklist, the required HTML release log, and (for website release blogs) its `assets/release-blog-template.md`.
+- **"I am preparing a release"** → `reference/releasing/SKILL.md` for the overview and authorization boundary, then `reference/release-workflow/SKILL.md` for the full publishing checklist, the required HTML release log, and (for website release blogs) its `reference/release-workflow/assets/release-blog-template.md`.
 - **"This broad dev task needs triage"** → run the read-only portfolio sweep in
   `reference/contributing/SKILL.md`, then ask for authorization before mutating
   GitHub state.

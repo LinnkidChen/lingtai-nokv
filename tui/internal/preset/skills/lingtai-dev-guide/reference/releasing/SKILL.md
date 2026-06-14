@@ -50,6 +50,6 @@ blog must land first.
 - final public-surface verification and the maintainer report;
 - the **required shareable HTML release log** (per-release, self-contained) and
   its validation, plus `../release-html-log-template.html`;
-- the **website release blog** and its reusable `assets/release-blog-template.md`.
+- the **website release blog** and its reusable `../release-workflow/assets/release-blog-template.md`.
 
 Start there for any real publish operation.
