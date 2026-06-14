@@ -607,6 +607,7 @@
   "daemons.events": "Events / tool calls (full)",
   "daemons.interactions": "Interactions (full chat_history)",
   "daemons.result": "Result",
+  "daemons.group_id": "group id",
   "daemons.backend": "backend",
   "daemons.preset": "preset",
   "daemons.current_tool": "current tool",

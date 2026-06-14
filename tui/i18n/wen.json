@@ -607,6 +607,7 @@
   "daemons.events": "诸事 / 器用（全量）",
   "daemons.interactions": "交互之程（全量 chat_history）",
   "daemons.result": "结果",
+  "daemons.group_id": "组号",
   "daemons.backend": "后端",
   "daemons.preset": "禀赋",
   "daemons.current_tool": "当前之器",

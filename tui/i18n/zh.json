@@ -607,6 +607,7 @@
   "daemons.events": "事件 / 工具调用（全量）",
   "daemons.interactions": "交互过程（全量 chat_history）",
   "daemons.result": "结果",
+  "daemons.group_id": "组 ID",
   "daemons.backend": "后端",
   "daemons.preset": "预设",
   "daemons.current_tool": "当前工具",

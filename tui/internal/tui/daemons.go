@@ -75,6 +75,7 @@ type daemonsLoadMsg struct {
 type daemonSummary struct {
 	Dir          string
 	Handle       string
+	GroupID      string
 	State        string
 	Task         string
 	Backend      string
@@ -510,6 +511,13 @@ func (m DaemonsModel) renderList(maxW int) string {
 		line := fmt.Sprintf("%s%-8s %s", marker, d.Handle, stateRendered)
 		lines = append(lines, style.Render(truncateForPanel(line, maxW)))
 		desc := d.Task
+		if d.GroupID != "" {
+			if desc != "" {
+				desc = d.GroupID + " · " + desc
+			} else {
+				desc = d.GroupID
+			}
+		}
 		if desc == "" {
 			desc = d.Backend
 		}
@@ -542,6 +550,7 @@ func (m DaemonsModel) renderDetail(maxW int) string {
 	lines = append(lines, "")
 	lines = append(lines, sectionStyle.Render(i18n.T("daemons.metadata")))
 	meta := []struct{ label, value string }{
+		{i18n.T("daemons.group_id"), d.GroupID},
 		{i18n.T("daemons.backend"), d.Backend},
 		{i18n.T("daemons.preset"), d.Preset},
 		{i18n.T("daemons.current_tool"), d.CurrentTool},
@@ -689,6 +698,7 @@ func readDaemonSummary(dir string) (daemonSummary, error) {
 		return item, err
 	}
 	item.Task = stringField(raw, "task")
+	item.GroupID = stringField(raw, "group_id")
 	item.State = stringField(raw, "state")
 	item.Backend = stringField(raw, "backend")
 	item.Preset = daemonPreset(raw)

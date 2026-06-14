@@ -46,6 +46,7 @@ func TestLoadDaemonSummariesReadsMetadataEventsAndChats(t *testing.T) {
 	}
 	write(filepath.Join(daemonDir, "daemon.json"), `{
 		"task":"Inspect daemon browser",
+		"group_id":"dg-20260609-010203-fedcba",
 		"state":"done",
 		"backend":"lingtai",
 		"started_at":"2026-06-09T01:02:03Z",
@@ -79,6 +80,9 @@ func TestLoadDaemonSummariesReadsMetadataEventsAndChats(t *testing.T) {
 	}
 	if got.Task != "Inspect daemon browser" || got.Turn != 3 || got.MaxTurns != 8 {
 		t.Fatalf("metadata not parsed: %#v", got)
+	}
+	if got.GroupID != "dg-20260609-010203-fedcba" {
+		t.Fatalf("group id = %q", got.GroupID)
 	}
 	if got.FinishedAt != "2026-06-09T01:02:09Z" || got.CompletedAt != got.FinishedAt || got.ElapsedS != 6.25 {
 		t.Fatalf("terminal timing not parsed: %#v", got)
@@ -141,6 +145,7 @@ func TestRenderDetailShowsPresetNearBackend(t *testing.T) {
 	m := DaemonsModel{
 		items: []daemonSummary{{
 			Dir:     "/tmp/daemons/em-7",
+			GroupID: "dg-20260609-010203-fedcba",
 			State:   "done",
 			Backend: "lingtai",
 			Preset:  "deepseek-coder",
@@ -149,6 +154,9 @@ func TestRenderDetailShowsPresetNearBackend(t *testing.T) {
 	out := m.renderDetail(80)
 	if !strings.Contains(out, "deepseek-coder") {
 		t.Fatalf("renderDetail missing preset; got:\n%s", out)
+	}
+	if !strings.Contains(out, "dg-20260609-010203-fedcba") {
+		t.Fatalf("renderDetail missing group id; got:\n%s", out)
 	}
 	// preset row sits in the metadata block, right after backend.
 	bi := strings.Index(out, "lingtai")
