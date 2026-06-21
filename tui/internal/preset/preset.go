@@ -1022,6 +1022,11 @@ func codexPreset() Preset {
 				"provider": "codex", "model": "gpt-5.5",
 				"api_key": nil, "api_key_env": "",
 				"base_url": "https://chatgpt.com/backend-api/codex",
+				// LingTai is the primary brain, so Codex runs at maximum
+				// reasoning effort by default. Carried explicitly
+				// here (not a UI-only fallback) so the running session and
+				// generated init.json actually receive xhigh.
+				"thinking": "xhigh",
 			},
 			"capabilities": map[string]interface{}{
 				"web_search": cx,
