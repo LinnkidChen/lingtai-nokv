@@ -125,6 +125,7 @@ prefix_for_bin_dir() {
 json_escape() {
   local s="$1" ch ord
   local LC_ALL=C
+  # LC_ALL=C makes Bash indexing byte-wise: UTF-8 metadata bytes pass through; JSON controls are escaped.
   local i
 
   for (( i = 0; i < ${#s}; i++ )); do
