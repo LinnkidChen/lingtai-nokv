@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -103,6 +104,111 @@ func noDevHome(t *testing.T) (string, func(string) (string, bool)) {
 }
 
 type fakeFileInfo struct{ os.FileInfo }
+
+func writeSourceInstallMetadata(t *testing.T, globalDir, prefix, binDir string, managed []string) {
+	t.Helper()
+	if err := os.MkdirAll(globalDir, 0o755); err != nil {
+		t.Fatalf("mkdir global dir: %v", err)
+	}
+	raw, err := json.Marshal(map[string]interface{}{
+		"schema":           sourceInstallMetadataSchema,
+		"schema_version":   1,
+		"install_method":   "source",
+		"prefix":           prefix,
+		"bin_dir":          binDir,
+		"repo_url":         "https://github.com/Lingtai-AI/lingtai.git",
+		"requested_ref":    "v0.8.1",
+		"resolved_ref":     "v0.8.1",
+		"resolved_commit":  "0123456789abcdef",
+		"stamped_version":  "v0.8.1",
+		"installed_at":     "2026-06-23T00:00:00Z",
+		"managed_binaries": managed,
+	})
+	if err != nil {
+		t.Fatalf("marshal install metadata: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalDir, "install.json"), raw, 0o644); err != nil {
+		t.Fatalf("write install metadata: %v", err)
+	}
+}
+
+func TestDetectTUIInstallMethodSourceMetadataMatchesExecutable(t *testing.T) {
+	globalDir := t.TempDir()
+	prefix := t.TempDir()
+	binDir := filepath.Join(prefix, "bin")
+	exe := filepath.Join(binDir, "lingtai-tui")
+	writeSourceInstallMetadata(t, globalDir, prefix, binDir, []string{exe})
+
+	info := detectTUIInstallMethod(globalDir, exe, DoctorOptions{
+		LookupEnv: func(string) (string, bool) { return "", false },
+	})
+	if info.Method != TUIInstallMethodSource {
+		t.Fatalf("method = %s, want source; diagnostics=%+v", info.Method, info.Diagnostics)
+	}
+	if !strings.Contains(info.summary(), "source/user-local") || !strings.Contains(info.summary(), prefix) {
+		t.Fatalf("source summary should mention method and prefix, got %q", info.summary())
+	}
+}
+
+func TestDetectTUIInstallMethodSourceMetadataBeatsHomebrewPath(t *testing.T) {
+	globalDir := t.TempDir()
+	exe := "/opt/homebrew/bin/lingtai-tui"
+	writeSourceInstallMetadata(t, globalDir, "/opt/homebrew", "/opt/homebrew/bin", []string{exe})
+
+	info := detectTUIInstallMethod(globalDir, exe, DoctorOptions{
+		LookupEnv: func(key string) (string, bool) {
+			if key == "HOMEBREW_PREFIX" {
+				return "/opt/homebrew", true
+			}
+			return "", false
+		},
+	})
+	if info.Method != TUIInstallMethodSource {
+		t.Fatalf("source metadata should win over Homebrew path, got %s", info.Method)
+	}
+}
+
+func TestDetectTUIInstallMethodHomebrewFromPathAndEnv(t *testing.T) {
+	tests := []struct {
+		name string
+		exe  string
+		env  map[string]string
+	}{
+		{name: "apple silicon path", exe: "/opt/homebrew/bin/lingtai-tui"},
+		{name: "linuxbrew path", exe: "/home/linuxbrew/.linuxbrew/bin/lingtai-tui"},
+		{name: "intel homebrew env", exe: "/usr/local/bin/lingtai-tui", env: map[string]string{"HOMEBREW_PREFIX": "/usr/local"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			info := detectTUIInstallMethod(t.TempDir(), tc.exe, DoctorOptions{
+				LookupEnv: func(key string) (string, bool) {
+					value, ok := tc.env[key]
+					return value, ok
+				},
+			})
+			if info.Method != TUIInstallMethodHomebrew {
+				t.Fatalf("method = %s, want homebrew; detail=%q diagnostics=%+v", info.Method, info.Detail, info.Diagnostics)
+			}
+		})
+	}
+}
+
+func TestDetectTUIInstallMethodUnknownWhenMetadataDoesNotMatch(t *testing.T) {
+	globalDir := t.TempDir()
+	prefix := t.TempDir()
+	binDir := filepath.Join(prefix, "bin")
+	writeSourceInstallMetadata(t, globalDir, prefix, binDir, []string{filepath.Join(binDir, "lingtai-tui")})
+
+	info := detectTUIInstallMethod(globalDir, filepath.Join(t.TempDir(), "bin", "lingtai-tui"), DoctorOptions{
+		LookupEnv: func(string) (string, bool) { return "", false },
+	})
+	if info.Method != TUIInstallMethodUnknown {
+		t.Fatalf("method = %s, want unknown", info.Method)
+	}
+	if len(info.Diagnostics) == 0 || !strings.Contains(info.Diagnostics[0].Text, "does not match executable") {
+		t.Fatalf("expected stale metadata diagnostic, got %+v", info.Diagnostics)
+	}
+}
 
 func TestEnsureRuntimeChecksUpgradeAfterCreatingVenv(t *testing.T) {
 	var ensured bool
@@ -482,6 +588,46 @@ func TestRunDoctorUpdateTUIOutdatedForceRunsBrewInOrder(t *testing.T) {
 	}
 	if indexOfCall(runner.calls, want[0]) > indexOfCall(runner.calls, want[1]) {
 		t.Fatalf("expected brew update before brew upgrade, got %#v", runner.calls)
+	}
+}
+
+func TestRunDoctorUpdateReportsSourceInstallAndDoesNotRunBrew(t *testing.T) {
+	globalDir := t.TempDir()
+	prefix := t.TempDir()
+	binDir := filepath.Join(prefix, "bin")
+	exe := filepath.Join(binDir, "lingtai-tui")
+	writeSourceInstallMetadata(t, globalDir, prefix, binDir, []string{exe})
+	runner := &fakeRunner{versions: []string{"0.9.7", "0.9.7"}}
+
+	report := RunDoctorUpdate(globalDir, DoctorOptions{
+		CurrentTUIVersion: "v0.8.0",
+		ForceTUI:          true,
+		ForcePython:       false,
+		HTTPClient:        testVersionClient(t, "0.9.7", "v0.8.1"),
+		Runner:            runner,
+		LookPath: func(name string) (string, error) {
+			if name == "brew" {
+				return "/opt/homebrew/bin/brew", nil
+			}
+			return "", errors.New("not found")
+		},
+		Executable: func() (string, error) { return exe, nil },
+		Home:       t.TempDir(),
+		LookupEnv:  func(string) (string, bool) { return "", false },
+		Readlink:   func(string) (string, error) { return "", os.ErrInvalid },
+		Stat:       statAllExist,
+	})
+	if !report.Healthy {
+		t.Fatalf("source install guidance should not fail doctor: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "TUI install method: source/user-local") {
+		t.Fatalf("expected source install method report: %+v", report.Lines)
+	}
+	if !containsLine(report.Lines, "Source/user-local TUI update is not automated yet") {
+		t.Fatalf("expected source manual-update guidance: %+v", report.Lines)
+	}
+	if containsCall(runner.calls, "brew") {
+		t.Fatalf("source install must not run brew, got %#v", runner.calls)
 	}
 }
 
