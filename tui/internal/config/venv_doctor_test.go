@@ -168,6 +168,26 @@ func TestDetectTUIInstallMethodSourceMetadataBeatsHomebrewPath(t *testing.T) {
 	}
 }
 
+func intelHomebrewSymlink(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	cellarExe := filepath.Join(root, "usr", "local", "Cellar", "lingtai-tui", "0.8.1", "bin", "lingtai-tui")
+	linkExe := filepath.Join(root, "usr", "local", "bin", "lingtai-tui")
+	if err := os.MkdirAll(filepath.Dir(cellarExe), 0o755); err != nil {
+		t.Fatalf("mkdir Cellar dir: %v", err)
+	}
+	if err := os.WriteFile(cellarExe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write Cellar executable: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(linkExe), 0o755); err != nil {
+		t.Fatalf("mkdir bin dir: %v", err)
+	}
+	if err := os.Symlink(cellarExe, linkExe); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	return linkExe
+}
+
 func TestDetectTUIInstallMethodHomebrewFromPathAndEnv(t *testing.T) {
 	tests := []struct {
 		name string
@@ -190,6 +210,32 @@ func TestDetectTUIInstallMethodHomebrewFromPathAndEnv(t *testing.T) {
 				t.Fatalf("method = %s, want homebrew; detail=%q diagnostics=%+v", info.Method, info.Detail, info.Diagnostics)
 			}
 		})
+	}
+}
+
+func TestDetectTUIInstallMethodHomebrewFromIntelBinSymlink(t *testing.T) {
+	exe := intelHomebrewSymlink(t)
+
+	info := detectTUIInstallMethod(t.TempDir(), exe, DoctorOptions{
+		LookupEnv: func(string) (string, bool) { return "", false },
+	})
+	if info.Method != TUIInstallMethodHomebrew {
+		t.Fatalf("method = %s, want homebrew; detail=%q diagnostics=%+v", info.Method, info.Detail, info.Diagnostics)
+	}
+}
+
+func TestDetectTUIInstallMethodSourceMetadataBeatsResolvedHomebrewSymlink(t *testing.T) {
+	globalDir := t.TempDir()
+	exe := intelHomebrewSymlink(t)
+	binDir := filepath.Dir(exe)
+	prefix := filepath.Dir(binDir)
+	writeSourceInstallMetadata(t, globalDir, prefix, binDir, []string{exe})
+
+	info := detectTUIInstallMethod(globalDir, exe, DoctorOptions{
+		LookupEnv: func(string) (string, bool) { return "", false },
+	})
+	if info.Method != TUIInstallMethodSource {
+		t.Fatalf("source metadata should win over resolved Homebrew symlink, got %s; detail=%q diagnostics=%+v", info.Method, info.Detail, info.Diagnostics)
 	}
 }
 

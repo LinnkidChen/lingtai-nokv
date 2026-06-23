@@ -614,7 +614,15 @@ func detectTUIInstallMethod(globalDir, exe string, opts DoctorOptions) TUIInstal
 		})
 	}
 
-	if ok, detail := detectHomebrewTUIInstall(exe, opts.LookupEnv); ok {
+	homebrewExe := exe
+	if exe != "" {
+		// Intel macOS Homebrew launches can report /usr/local/bin/lingtai-tui
+		// here; resolve it before matching Cellar paths, but ignore failures.
+		if resolvedExe, err := filepath.EvalSymlinks(exe); err == nil && resolvedExe != "" {
+			homebrewExe = resolvedExe
+		}
+	}
+	if ok, detail := detectHomebrewTUIInstall(homebrewExe, opts.LookupEnv); ok {
 		info.Method = TUIInstallMethodHomebrew
 		info.Detail = detail
 	}
