@@ -546,3 +546,41 @@ func TestSumMoltSessionTokenLedgerSplitsCurrentAndLastMoltWindows(t *testing.T) 
 		t.Fatalf("last codex mode counts = %+v, want full previous-session row only", stats.Last)
 	}
 }
+
+func TestSumMoltSessionTokenLedgerCacheInvalidatesOnLedgerChange(t *testing.T) {
+	agentDir := filepath.Join(t.TempDir(), "agent")
+	logsDir := filepath.Join(agentDir, "logs")
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	molt := time.Unix(4000, 0).UTC()
+	events := fmt.Sprintf(`{"type":"psyche_molt","ts":%d}`+"\n", molt.Unix())
+	if err := os.WriteFile(filepath.Join(logsDir, "events.jsonl"), []byte(events), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ledgerPath := filepath.Join(logsDir, "token_ledger.jsonl")
+	first := fmt.Sprintf(`{"ts":%q,"input":1,"output":1}`+"\n", molt.Add(time.Minute).Format(time.RFC3339))
+	if err := os.WriteFile(ledgerPath, []byte(first), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stats := SumMoltSessionTokenLedger(agentDir)
+	if stats.Current.APICalls != 1 || stats.Current.Input != 1 {
+		t.Fatalf("initial stats = %+v", stats.Current)
+	}
+	second := fmt.Sprintf(`{"ts":%q,"input":2,"output":2}`+"\n", molt.Add(2*time.Minute).Format(time.RFC3339))
+	f, err := os.OpenFile(ledgerPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(second); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	stats = SumMoltSessionTokenLedger(agentDir)
+	if stats.Current.APICalls != 2 || stats.Current.Input != 3 {
+		t.Fatalf("after ledger append stats = %+v", stats.Current)
+	}
+}

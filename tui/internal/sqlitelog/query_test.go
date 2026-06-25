@@ -619,3 +619,41 @@ func TestNotificationBlockSnapshotTime(t *testing.T) {
 		t.Fatalf("unexpected year: %d", tt.Year())
 	}
 }
+
+func TestQueryMoltSessionWindowsLatestTwo(t *testing.T) {
+	agentDir := makeTestDB(t,
+		`INSERT INTO events(ts,type,fields_json) VALUES(1000.0,'psyche_molt','{}');`,
+		`INSERT INTO events(ts,type,fields_json) VALUES(1001.0,'tool_call','{}');`,
+		`INSERT INTO events(ts,type,fields_json) VALUES(1002.5,'psyche_molt','{}');`,
+	)
+	current, lastSince, lastBefore, ok, err := QueryMoltSessionWindows(agentDir)
+	if err != nil {
+		t.Fatalf("QueryMoltSessionWindows: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected sqlite query to be ok")
+	}
+	if got, want := current.Unix(), int64(1002); got != want {
+		t.Fatalf("current unix = %d, want %d", got, want)
+	}
+	if got, want := lastSince.Unix(), int64(1000); got != want {
+		t.Fatalf("lastSince unix = %d, want %d", got, want)
+	}
+	if !lastBefore.Equal(current) {
+		t.Fatalf("lastBefore = %v, want current %v", lastBefore, current)
+	}
+}
+
+func TestQueryMoltSessionWindowsEmpty(t *testing.T) {
+	agentDir := makeTestDB(t)
+	current, lastSince, lastBefore, ok, err := QueryMoltSessionWindows(agentDir)
+	if err != nil {
+		t.Fatalf("QueryMoltSessionWindows empty: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected sqlite query to be ok")
+	}
+	if !current.IsZero() || !lastSince.IsZero() || !lastBefore.IsZero() {
+		t.Fatalf("expected zero windows, got current=%v lastSince=%v lastBefore=%v", current, lastSince, lastBefore)
+	}
+}
