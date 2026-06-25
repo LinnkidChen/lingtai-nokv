@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/anthropics/lingtai-tui/internal/sqlitelog"
 )
 
 // agentManifest is the raw JSON shape of .agent.json.
@@ -512,6 +514,20 @@ var tokenLedgerTotalsCache = struct {
 	byPath map[string]tokenLedgerCacheEntry
 }{byPath: map[string]tokenLedgerCacheEntry{}}
 
+type moltSessionTokenLedgerCacheEntry struct {
+	ledgerSize    int64
+	ledgerModTime time.Time
+	currentSince  time.Time
+	lastSince     time.Time
+	lastBefore    time.Time
+	stats         MoltSessionTokenStats
+}
+
+var moltSessionTokenLedgerCache = struct {
+	sync.Mutex
+	byPath map[string]moltSessionTokenLedgerCacheEntry
+}{byPath: map[string]moltSessionTokenLedgerCacheEntry{}}
+
 func cachedTokenLedgerTotals(path string, info os.FileInfo) (TokenTotals, bool) {
 	key := filepath.Clean(path)
 	tokenLedgerTotalsCache.Lock()
@@ -605,15 +621,66 @@ func SumTokenLedgerByProvider(path string, recentN int) (
 // the immediately previous session (the window before that latest molt).
 func SumMoltSessionTokenLedger(agentDir string) MoltSessionTokenStats {
 	ledgerPath := filepath.Join(agentDir, "logs", "token_ledger.jsonl")
-	currentSince, lastSince, lastBefore := moltSessionWindows(filepath.Join(agentDir, "logs", "events.jsonl"))
+	currentSince, lastSince, lastBefore, ok, err := sqlitelog.QueryMoltSessionWindows(agentDir)
+	if err != nil || !ok {
+		currentSince, lastSince, lastBefore = moltSessionWindows(filepath.Join(agentDir, "logs", "events.jsonl"))
+	}
+	return sumMoltSessionTokenLedgerBetween(ledgerPath, currentSince, lastSince, lastBefore)
+}
 
-	stats := MoltSessionTokenStats{
-		Current: SumSessionTokenLedgerBetween(ledgerPath, currentSince, time.Time{}),
+func sumMoltSessionTokenLedgerBetween(path string, currentSince, lastSince, lastBefore time.Time) MoltSessionTokenStats {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return MoltSessionTokenStats{}
 	}
-	if !lastBefore.IsZero() {
-		stats.Last = SumSessionTokenLedgerBetween(ledgerPath, lastSince, lastBefore)
+	if cached, ok := cachedMoltSessionTokenLedger(path, info, currentSince, lastSince, lastBefore); ok {
+		return cached
 	}
+
+	var stats MoltSessionTokenStats
+	_ = forEachJSONLLine(path, func(line []byte) {
+		var entry LedgerEntry
+		if err := json.Unmarshal(line, &entry); err != nil {
+			return
+		}
+		if isDaemonLedgerEntry(entry) {
+			return
+		}
+		if ledgerEntryWithinBounds(entry, currentSince, time.Time{}) {
+			addLedgerEntryToSessionStats(&stats.Current, entry)
+		}
+		if !lastBefore.IsZero() && ledgerEntryWithinBounds(entry, lastSince, lastBefore) {
+			addLedgerEntryToSessionStats(&stats.Last, entry)
+		}
+	})
+	storeMoltSessionTokenLedger(path, info, currentSince, lastSince, lastBefore, stats)
 	return stats
+}
+
+func cachedMoltSessionTokenLedger(path string, info os.FileInfo, currentSince, lastSince, lastBefore time.Time) (MoltSessionTokenStats, bool) {
+	key := filepath.Clean(path)
+	moltSessionTokenLedgerCache.Lock()
+	defer moltSessionTokenLedgerCache.Unlock()
+	entry, ok := moltSessionTokenLedgerCache.byPath[key]
+	if !ok || entry.ledgerSize != info.Size() || !entry.ledgerModTime.Equal(info.ModTime()) ||
+		!entry.currentSince.Equal(currentSince) || !entry.lastSince.Equal(lastSince) || !entry.lastBefore.Equal(lastBefore) {
+		return MoltSessionTokenStats{}, false
+	}
+	return entry.stats, true
+}
+
+func storeMoltSessionTokenLedger(path string, info os.FileInfo, currentSince, lastSince, lastBefore time.Time, stats MoltSessionTokenStats) {
+	key := filepath.Clean(path)
+	moltSessionTokenLedgerCache.Lock()
+	defer moltSessionTokenLedgerCache.Unlock()
+	moltSessionTokenLedgerCache.byPath[key] = moltSessionTokenLedgerCacheEntry{
+		ledgerSize:    info.Size(),
+		ledgerModTime: info.ModTime(),
+		currentSince:  currentSince,
+		lastSince:     lastSince,
+		lastBefore:    lastBefore,
+		stats:         stats,
+	}
 }
 
 // SumSessionTokenLedgerSince reads a token_ledger.jsonl file and sums
@@ -628,49 +695,57 @@ func SumSessionTokenLedgerSince(path string, since time.Time) SessionTokenStats 
 // non-daemon entries in [since, before). A zero bound is open-ended.
 func SumSessionTokenLedgerBetween(path string, since, before time.Time) SessionTokenStats {
 	var stats SessionTokenStats
-	bounded := !since.IsZero() || !before.IsZero()
 	_ = forEachJSONLLine(path, func(line []byte) {
 		var entry LedgerEntry
 		if err := json.Unmarshal(line, &entry); err != nil {
 			return
 		}
-		if isDaemonLedgerEntry(entry) {
+		if isDaemonLedgerEntry(entry) || !ledgerEntryWithinBounds(entry, since, before) {
 			return
 		}
-		if bounded {
-			ts, err := time.Parse(time.RFC3339, entry.TS)
-			if err != nil {
-				return
-			}
-			if !since.IsZero() && ts.Before(since) {
-				return
-			}
-			if !before.IsZero() && !ts.Before(before) {
-				return
-			}
-		}
-		stats.Input += entry.Input
-		stats.Output += entry.Output
-		stats.Thinking += entry.Thinking
-		stats.Cached += entry.Cached
-		stats.APICalls++
-
-		switch strings.ToLower(strings.TrimSpace(entry.CodexRequestMode)) {
-		case "ws_full":
-			stats.HasCodexRequestMode = true
-			stats.CodexWSFull++
-		case "ws_incremental", "ws_increment":
-			stats.HasCodexRequestMode = true
-			stats.CodexWSIncremental++
-		case "":
-			// Non-Codex or older rows.
-		default:
-			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(entry.CodexRequestMode)), "ws_") {
-				stats.HasCodexRequestMode = true
-			}
-		}
+		addLedgerEntryToSessionStats(&stats, entry)
 	})
 	return stats
+}
+
+func ledgerEntryWithinBounds(entry LedgerEntry, since, before time.Time) bool {
+	if since.IsZero() && before.IsZero() {
+		return true
+	}
+	ts, err := time.Parse(time.RFC3339, entry.TS)
+	if err != nil {
+		return false
+	}
+	if !since.IsZero() && ts.Before(since) {
+		return false
+	}
+	if !before.IsZero() && !ts.Before(before) {
+		return false
+	}
+	return true
+}
+
+func addLedgerEntryToSessionStats(stats *SessionTokenStats, entry LedgerEntry) {
+	stats.Input += entry.Input
+	stats.Output += entry.Output
+	stats.Thinking += entry.Thinking
+	stats.Cached += entry.Cached
+	stats.APICalls++
+
+	switch strings.ToLower(strings.TrimSpace(entry.CodexRequestMode)) {
+	case "ws_full":
+		stats.HasCodexRequestMode = true
+		stats.CodexWSFull++
+	case "ws_incremental", "ws_increment":
+		stats.HasCodexRequestMode = true
+		stats.CodexWSIncremental++
+	case "":
+		// Non-Codex or older rows.
+	default:
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(entry.CodexRequestMode)), "ws_") {
+			stats.HasCodexRequestMode = true
+		}
+	}
 }
 
 // moltSessionWindows returns the current lower bound, previous lower bound, and
