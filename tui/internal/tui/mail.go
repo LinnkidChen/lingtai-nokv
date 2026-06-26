@@ -1446,7 +1446,15 @@ func (m MailModel) View() string {
 		statusBar += strings.Repeat(" ", statusPad) + hints
 	}
 
+	// Telemetry row: one muted, high-density line between the input box and the
+	// status/path footer showing current-session token usage and live context
+	// pressure ("tok 18.4k / 128k  ctx 14%  ▓▓▓░░"). Omitted entirely when no
+	// session/context data is available (graceful hide). Scalar-only — never the
+	// `_meta` block hidden by PR #440.
 	footer := sep + "\n" + inputSection + "\n"
+	if telemetry := formatHomeTelemetry(m.gatherHomeTelemetry(), m.width); telemetry != "" {
+		footer += telemetry + "\n"
+	}
 	footer += statusBar
 
 	// Top banner: a one-time "loading... / 加载中..." line while the deferred
