@@ -37,6 +37,9 @@ func buildAgentCodexEntries(agentDir string) []MarkdownEntry {
 	if agentDir == "" {
 		return nil
 	}
+	if knowledgeBackedByNoKV(agentDir) {
+		return []MarkdownEntry{nokvKnowledgeNotice()}
+	}
 	migrateLegacyJSONStores(agentDir)
 	return buildAgentKnowledgeEntries(agentDir)
 }

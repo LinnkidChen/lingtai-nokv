@@ -13,15 +13,56 @@ type Location struct {
 
 // AgentNode represents a discovered agent in the network.
 type AgentNode struct {
-	Address      string   `json:"address"`
-	AgentName    string   `json:"agent_name"`
-	Nickname     string   `json:"nickname"`
-	State        string   `json:"state"`
-	Alive        bool     `json:"alive"`
-	IsHuman      bool     `json:"is_human"`
-	Capabilities []string `json:"capabilities"`
-	Location     *Location `json:"location,omitempty"`
-	WorkingDir   string   `json:"-"` // not serialized to API
+	Address      string         `json:"address"`
+	AgentName    string         `json:"agent_name"`
+	Nickname     string         `json:"nickname"`
+	State        string         `json:"state"`
+	Alive        bool           `json:"alive"`
+	IsHuman      bool           `json:"is_human"`
+	Capabilities []string       `json:"capabilities"`
+	Location     *Location      `json:"location,omitempty"`
+	Storage      *StorageStatus `json:"storage,omitempty"`
+	WorkingDir   string         `json:"-"` // not serialized to API
+}
+
+type StorageStatus struct {
+	Schema  string          `json:"schema"`
+	Enabled bool            `json:"enabled"`
+	Backend string          `json:"backend"`
+	Routes  []StorageRoute  `json:"routes"`
+	Streams []StorageStream `json:"streams"`
+	Health  *StorageHealth  `json:"health,omitempty"`
+	NoKV    NoKVStatus      `json:"nokv"`
+}
+
+type StorageRoute struct {
+	Mount      string `json:"mount"`
+	LocalRoot  string `json:"local_root"`
+	Backend    string `json:"backend"`
+	RemoteRoot string `json:"remote_root"`
+}
+
+type StorageStream struct {
+	Stream     string `json:"stream"`
+	LocalPath  string `json:"local_path"`
+	Backend    string `json:"backend"`
+	RemoteRoot string `json:"remote_root"`
+	Mode       string `json:"mode"`
+}
+
+type StorageHealth struct {
+	Status          string   `json:"status"`
+	Backend         string   `json:"backend"`
+	Streams         []string `json:"streams"`
+	LastError       string   `json:"last_error,omitempty"`
+	LastErrorStream string   `json:"last_error_stream,omitempty"`
+	UpdatedAt       string   `json:"updated_at,omitempty"`
+}
+
+type NoKVStatus struct {
+	MetadataAddr string `json:"metadata_addr"`
+	Bucket       string `json:"bucket"`
+	Endpoint     string `json:"endpoint"`
 }
 
 // AvatarEdge is a parent → child spawning relationship.
@@ -70,14 +111,14 @@ type Network struct {
 
 // MailMessage is the schema for messages written to mailbox/inbox/{uuid}/message.json.
 type MailMessage struct {
-	ID         string                 `json:"id"`
-	MailboxID  string                 `json:"_mailbox_id"`
-	From       string                 `json:"from"`
-	To         interface{}            `json:"to"` // string or []string
-	CC         []string               `json:"cc"`
-	BCC        []string               `json:"bcc"`
-	Subject    string                 `json:"subject"`
-	Message    string                 `json:"message"`
+	ID          string                 `json:"id"`
+	MailboxID   string                 `json:"_mailbox_id"`
+	From        string                 `json:"from"`
+	To          interface{}            `json:"to"` // string or []string
+	CC          []string               `json:"cc"`
+	BCC         []string               `json:"bcc"`
+	Subject     string                 `json:"subject"`
+	Message     string                 `json:"message"`
 	Type        string                 `json:"type"`
 	ReceivedAt  string                 `json:"received_at"`
 	SentAt      string                 `json:"sent_at,omitempty"`

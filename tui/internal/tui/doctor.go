@@ -1401,6 +1401,8 @@ func checkKernelHealth(orchDir, globalDir string, lines *[]doctorLine) bool {
 		})
 	}
 
+	*lines = append(*lines, storageStatusDoctorLines(orchDir)...)
+
 	return allOK
 }
 

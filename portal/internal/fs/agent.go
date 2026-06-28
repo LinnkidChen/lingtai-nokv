@@ -39,6 +39,10 @@ func ReadAgent(dir string) (AgentNode, error) {
 
 	// Parse capabilities from either []string or [["name", {}], ...] format
 	caps := ParseCapabilities(m.Capabilities)
+	var storage *StorageStatus
+	if status, err := ReadStorageStatus(dir); err == nil {
+		storage = &status
+	}
 
 	return AgentNode{
 		Address:      m.Address,
@@ -48,6 +52,7 @@ func ReadAgent(dir string) (AgentNode, error) {
 		IsHuman:      isHuman,
 		Capabilities: caps,
 		Location:     m.Location, // nil if absent from JSON
+		Storage:      storage,
 		WorkingDir:   dir,
 	}, nil
 }

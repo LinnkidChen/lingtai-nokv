@@ -11,10 +11,11 @@ The portal's read-focused window into a `.lingtai/` project directory. Same shap
 ### Types (`types.go`)
 - `Location` struct (`portal/internal/fs/types.go:5-12`) — cached ipinfo.io geolocation.
 - `AgentNode` (`portal/internal/fs/types.go:15-25`) — discovered agent: address, name, state, alive, capabilities, location. `WorkingDir` is internal-only (`json:"-"`).
-- `AvatarEdge`, `ContactEdge`, `MailEdge` (`portal/internal/fs/types.go:28-49`) — topology edge types.
-- `NetworkStats` (`portal/internal/fs/types.go:52-59`) — aggregate counts by state.
-- `Network` (`portal/internal/fs/types.go:62-69`) — full topology payload: nodes + edges + stats + lang.
-- `MailMessage` (`portal/internal/fs/types.go:72-89`) — inbox/archive/sent message schema, with identity card.
+- `StorageStatus`, `StorageRoute`, `StorageStream`, `StorageHealth`, `NoKVStatus` (`portal/internal/fs/types.go:28-66`) — secret-free kernel-published storage status, including Feature 04 stream mirrors and degraded mirror health; Portal displays/preserves this metadata but does not own NoKV I/O.
+- `AvatarEdge`, `ContactEdge`, `MailEdge` (`portal/internal/fs/types.go:58-80`) — topology edge types.
+- `NetworkStats` (`portal/internal/fs/types.go:82-90`) — aggregate counts by state.
+- `Network` (`portal/internal/fs/types.go:92-100`) — full topology payload: nodes + edges + stats + lang.
+- `MailMessage` (`portal/internal/fs/types.go:102-120`) — inbox/archive/sent message schema, with identity card.
 
 ### Agent Reading (`agent.go`)
 - `agentManifest` struct (`portal/internal/fs/agent.go:13-23`) — raw `.agent.json` JSON shape.
@@ -77,7 +78,7 @@ The portal's read-focused window into a `.lingtai/` project directory. Same shap
 ## Connections
 
 - **Called by** `portal/internal/api/` (handlers build `Network` payloads; replay calls `ReconstructTape`; mail composer calls `WriteMail`).
-- **Reads** `.lingtai/<agent>/.agent.json`, `.agent.heartbeat`, `.status.json`, `system/manifest.resolved.json` (preferred over `init.json` when present), `init.json`, `logs/events.jsonl`, `logs/token_ledger.jsonl`, `delegates/ledger.jsonl`, `mailbox/contacts.json`, `mailbox/inbox/*/message.json`, `mailbox/archive/*/message.json`, `mailbox/sent/*/message.json`.
+- **Reads** `.lingtai/<agent>/.agent.json`, `.agent.heartbeat`, `.status.json`, `system/manifest.resolved.json` (preferred over `init.json` when present), `system/storage.resolved.json`, `init.json`, `logs/events.jsonl`, `logs/token_ledger.jsonl`, `delegates/ledger.jsonl`, `mailbox/contacts.json`, `mailbox/inbox/*/message.json`, `mailbox/archive/*/message.json`, `mailbox/sent/*/message.json`.
 - **Writes** signal files (`.sleep`, `.suspend`, `.interrupt`, `.prompt`) and atomically updates human location in `.agent.json`. Writes outbound mail to inbox/outbox/sent directories.
 - **Cross-reference** `tui/internal/fs/` shares the same read pattern for agent manifests, heartbeats, mail, and ledgers. The portal adds `reconstruct.go` (tape reconstruction — the TUI doesn't do this), `MailCache` for incremental polling (the TUI reads all mail fresh each time), and `WriteMail` for the portal's mail composer. Address resolution and signal writing are identical across both binaries.
 
