@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -272,5 +273,214 @@ func TestBuildNetwork_MailEdgesUnaffected(t *testing.T) {
 
 	if len(net.MailEdges) != 0 {
 		t.Fatalf("mail edges = %d, want 0", len(net.MailEdges))
+	}
+}
+
+func TestBuildNetwork_IncludesSecretSafeStorageSummary(t *testing.T) {
+	base := t.TempDir()
+	aliceDir := filepath.Join(base, "alice")
+	writeAgentManifest(t, aliceDir, "alice", false)
+	writeHeartbeat(t, aliceDir)
+	writeAgentFile(t, aliceDir, "system/storage.resolved.json", `{
+	  "schema": "lingtai.storage.resolved/v1",
+	  "enabled": true,
+	  "backend": "routed",
+	  "routes": [
+	    {
+	      "mount": "knowledge",
+	      "local_root": "`+filepath.ToSlash(filepath.Join(aliceDir, "knowledge"))+`",
+	      "backend": "nokv",
+	      "remote_root": "/lingtai/projects/test-project/agents/alice/knowledge"
+	    }
+	  ],
+	  "nokv": {
+	    "metadata_addr": "127.0.0.1:7777",
+	    "bucket": "nokv",
+	    "endpoint": "http://127.0.0.1:9000"
+	  }
+	}`)
+
+	net, err := BuildNetwork(base)
+	if err != nil {
+		t.Fatalf("BuildNetwork: %v", err)
+	}
+	if len(net.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(net.Nodes))
+	}
+	node := net.Nodes[0]
+	if node.Storage == nil {
+		t.Fatalf("node storage missing: %+v", node)
+	}
+	if node.Storage.Backend != "routed" {
+		t.Fatalf("storage backend = %q, want routed", node.Storage.Backend)
+	}
+	if len(node.Storage.Routes) != 1 {
+		t.Fatalf("storage routes = %#v, want one route", node.Storage.Routes)
+	}
+	route := node.Storage.Routes[0]
+	if route.Mount != "knowledge" || route.Backend != "nokv" || route.RemoteRoot != "/lingtai/projects/test-project/agents/alice/knowledge" {
+		t.Fatalf("storage route = %#v, want NoKV-backed knowledge route", route)
+	}
+
+	raw, err := json.Marshal(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(raw)
+	for _, forbidden := range []string{aliceDir, "local_root", "WorkingDir", "AWS_SECRET_ACCESS_KEY", "secret"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("storage network payload leaked %q: %s", forbidden, payload)
+		}
+	}
+	if !strings.Contains(payload, `"storage"`) || !strings.Contains(payload, `"knowledge"`) || !strings.Contains(payload, `"nokv"`) {
+		t.Fatalf("storage network payload missing NoKV knowledge summary: %s", payload)
+	}
+}
+
+func TestBuildNetwork_IncludesUnknownStorageSummaryForMalformedArtifact(t *testing.T) {
+	base := t.TempDir()
+	aliceDir := filepath.Join(base, "alice")
+	writeAgentManifest(t, aliceDir, "alice", false)
+	writeHeartbeat(t, aliceDir)
+	writeAgentFile(t, aliceDir, "system/storage.resolved.json", `{
+	  "schema": "lingtai.storage.resolved/v1",
+	  "enabled": true,
+	  "routes": [
+	    {"mount": "knowledge", "local_root": "`+filepath.ToSlash(filepath.Join(aliceDir, "knowledge"))+`", "backend": "nokv"}
+	  ],
+	  "secret": "super-secret"
+	`)
+
+	net, err := BuildNetwork(base)
+	if err != nil {
+		t.Fatalf("BuildNetwork: %v", err)
+	}
+	if len(net.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(net.Nodes))
+	}
+	node := net.Nodes[0]
+	if node.Storage == nil {
+		t.Fatalf("node storage missing for malformed artifact: %+v", node)
+	}
+	if node.Storage.Backend != "unknown" || node.Storage.Error == "" {
+		t.Fatalf("storage summary = %#v, want unknown backend with error", node.Storage)
+	}
+	if len(node.Storage.Routes) != 0 {
+		t.Fatalf("malformed artifact must not expose routes: %#v", node.Storage.Routes)
+	}
+	raw, err := json.Marshal(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(raw)
+	for _, forbidden := range []string{aliceDir, "local_root", "super-secret", "secret"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("malformed storage payload leaked %q: %s", forbidden, payload)
+		}
+	}
+	if !strings.Contains(payload, `"storage"`) || !strings.Contains(payload, `"unknown"`) || !strings.Contains(payload, `"error"`) {
+		t.Fatalf("malformed storage payload missing unknown/error summary: %s", payload)
+	}
+}
+
+func TestBuildNetwork_IncludesUnknownStorageSummaryForUnsupportedSchema(t *testing.T) {
+	base := t.TempDir()
+	aliceDir := filepath.Join(base, "alice")
+	writeAgentManifest(t, aliceDir, "alice", false)
+	writeHeartbeat(t, aliceDir)
+	writeAgentFile(t, aliceDir, "system/storage.resolved.json", `{
+	  "schema": "lingtai.storage.resolved/v0",
+	  "enabled": true,
+	  "backend": "routed",
+	  "routes": [
+	    {
+	      "mount": "knowledge",
+	      "local_root": "`+filepath.ToSlash(filepath.Join(aliceDir, "knowledge"))+`",
+	      "backend": "nokv",
+	      "remote_root": "/lingtai/projects/test-project/agents/alice/knowledge"
+	    }
+	  ]
+	}`)
+
+	net, err := BuildNetwork(base)
+	if err != nil {
+		t.Fatalf("BuildNetwork: %v", err)
+	}
+	if len(net.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(net.Nodes))
+	}
+	storage := net.Nodes[0].Storage
+	if storage == nil {
+		t.Fatalf("node storage missing: %+v", net.Nodes[0])
+	}
+	if storage.Backend != "unknown" || storage.Error == "" {
+		t.Fatalf("storage summary = %#v, want unknown backend with error", storage)
+	}
+	if len(storage.Routes) != 0 {
+		t.Fatalf("unsupported schema must not expose routes: %#v", storage.Routes)
+	}
+
+	raw, err := json.Marshal(net.Nodes[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(raw)
+	for _, forbidden := range []string{aliceDir, "local_root"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("unsupported schema payload leaked %q: %s", forbidden, payload)
+		}
+	}
+}
+
+func TestBuildNetwork_IncludesUnknownStorageSummaryForStaleArtifact(t *testing.T) {
+	base := t.TempDir()
+	aliceDir := filepath.Join(base, "alice")
+	writeAgentManifest(t, aliceDir, "alice", false)
+	writeHeartbeat(t, aliceDir)
+	writeAgentFile(t, aliceDir, "init.json", `{}`)
+	writeAgentFile(t, aliceDir, "system/storage.resolved.json", `{
+	  "schema": "lingtai.storage.resolved/v1",
+	  "enabled": true,
+	  "backend": "routed",
+	  "routes": [
+	    {
+	      "mount": "knowledge",
+	      "local_root": "`+filepath.ToSlash(filepath.Join(aliceDir, "knowledge"))+`",
+	      "backend": "nokv",
+	      "remote_root": "/lingtai/projects/test-project/agents/alice/knowledge"
+	    }
+	  ]
+	}`)
+	now := time.Now()
+	touchAgentFile(t, aliceDir, "system/storage.resolved.json", now.Add(-2*time.Hour))
+	touchAgentFile(t, aliceDir, "init.json", now)
+
+	net, err := BuildNetwork(base)
+	if err != nil {
+		t.Fatalf("BuildNetwork: %v", err)
+	}
+	if len(net.Nodes) != 1 {
+		t.Fatalf("nodes = %d, want 1", len(net.Nodes))
+	}
+	storage := net.Nodes[0].Storage
+	if storage == nil {
+		t.Fatalf("node storage missing: %+v", net.Nodes[0])
+	}
+	if storage.Backend != "unknown" || storage.Error == "" {
+		t.Fatalf("storage summary = %#v, want unknown backend with error", storage)
+	}
+	if len(storage.Routes) != 0 {
+		t.Fatalf("stale artifact must not expose routes: %#v", storage.Routes)
+	}
+
+	raw, err := json.Marshal(net.Nodes[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := string(raw)
+	for _, forbidden := range []string{aliceDir, "local_root"} {
+		if strings.Contains(payload, forbidden) {
+			t.Fatalf("stale artifact payload leaked %q: %s", forbidden, payload)
+		}
 	}
 }

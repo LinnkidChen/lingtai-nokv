@@ -693,5 +693,17 @@
   "login.codex_no_saved_presets": "未找到已保存的 Codex 预设；请先选择或保存 Codex 预设，再使用此账户。",
   "login.codex_invalid_account": "该 Codex 账户无效 —— 请先按 [r] 重新认证，再将其设为当前账户。",
   "login.codex_apply_failed": "将 Codex 账户应用到预设失败：%s",
-  "login.codex_entry_hint": "[Enter] 设为当前  [r] 重新认证  [d/Del] 删除"
+  "login.codex_entry_hint": "[Enter] 设为当前  [r] 重新认证  [d/Del] 删除",
+  "storage.local_no_artifact": "存储：本地（没有 resolved artifact）",
+  "storage.unknown_reason": "存储：unknown（%v）",
+  "storage.local": "存储：本地",
+  "storage.backend": "存储：%s",
+  "storage.route": "%s -> %s",
+  "storage.route_remote": "%s -> %s（%s）",
+  "storage.nokv_metadata": "NoKV metadata：%s",
+  "storage.nokv_bucket": "NoKV bucket：%s",
+  "storage.nokv_endpoint": "NoKV endpoint：%s",
+  "knowledge.nokv_notice.label": "NoKV knowledge",
+  "knowledge.nokv_notice.description": "NoKV-backed knowledge 不由 TUI 浏览",
+  "knowledge.nokv_notice.content": "# NoKV knowledge\n\nNoKV-backed knowledge 不由 TUI 浏览。请通过 agent runtime 或本地 resolved status artifact 查看已配置 route。\n"
 }

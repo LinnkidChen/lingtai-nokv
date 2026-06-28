@@ -14,6 +14,14 @@ func BuildNetwork(baseDir string) (Network, error) {
 	for i := range nodes {
 		// Normalize state to uppercase (Python kernel writes lowercase)
 		nodes[i].State = strings.ToUpper(nodes[i].State)
+		if status, err := ReadStorageStatus(nodes[i].WorkingDir); err == nil {
+			nodes[i].Storage = status.Summary()
+		} else {
+			nodes[i].Storage = &StorageSummary{
+				Backend: "unknown",
+				Error:   "storage.resolved.json unavailable or invalid",
+			}
+		}
 		if nodes[i].IsHuman {
 			nodes[i].Alive = true
 		} else {

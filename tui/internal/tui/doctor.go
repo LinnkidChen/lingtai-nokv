@@ -552,6 +552,7 @@ func runDoctor(orchDir, globalDir string) doctorResultMsg {
 	// and runtime bootstrap while the kernel-owned skill carries reusable
 	// agent/MCP/log/notification checks.
 	lines = append(lines, doctorLine{Text: i18n.T("doctor.section_agent"), Section: true})
+	lines = append(lines, storageStatusDoctorLines(orchDir)...)
 	lines = append(lines, runKernelDoctorIntrinsic(orchDir, globalDir)...)
 
 	llmReport := doctorreport.LLMConfig{

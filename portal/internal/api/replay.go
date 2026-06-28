@@ -27,9 +27,9 @@ type ReplayChunk struct {
 
 // ReplayFrame is either a keyframe (Net set) or a delta (Delta set).
 type ReplayFrame struct {
-	T     int64        `json:"t"`
-	Net   *fs.Network  `json:"net,omitempty"`
-	Delta *FrameDelta  `json:"d,omitempty"`
+	T     int64       `json:"t"`
+	Net   *fs.Network `json:"net,omitempty"`
+	Delta *FrameDelta `json:"d,omitempty"`
 }
 
 // FrameDelta holds only the fields that changed relative to the previous frame.
@@ -193,6 +193,9 @@ func nodesEqual(a, b fs.AgentNode) bool {
 			return false
 		}
 	}
+	if !storageSummaryEqual(a.Storage, b.Storage) {
+		return false
+	}
 	if a.Location == nil && b.Location == nil {
 		return true
 	}
@@ -202,6 +205,18 @@ func nodesEqual(a, b fs.AgentNode) bool {
 	aLoc, _ := json.Marshal(a.Location)
 	bLoc, _ := json.Marshal(b.Location)
 	return string(aLoc) == string(bLoc)
+}
+
+func storageSummaryEqual(a, b *fs.StorageSummary) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	aRaw, _ := json.Marshal(a)
+	bRaw, _ := json.Marshal(b)
+	return string(aRaw) == string(bRaw)
 }
 
 // ---------------------------------------------------------------------------

@@ -693,5 +693,17 @@
   "login.codex_no_saved_presets": "No saved Codex presets found; choose or save a Codex preset to use this account.",
   "login.codex_invalid_account": "This Codex account is not valid — re-authenticate it ([r]) before setting it active.",
   "login.codex_apply_failed": "Failed to apply Codex account to presets: %s",
-  "login.codex_entry_hint": "[Enter] set active  [r] re-auth  [d/Del] remove"
+  "login.codex_entry_hint": "[Enter] set active  [r] re-auth  [d/Del] remove",
+  "storage.local_no_artifact": "storage: local (no resolved artifact)",
+  "storage.unknown_reason": "storage: unknown (%v)",
+  "storage.local": "storage: local",
+  "storage.backend": "storage: %s",
+  "storage.route": "%s -> %s",
+  "storage.route_remote": "%s -> %s (%s)",
+  "storage.nokv_metadata": "NoKV metadata: %s",
+  "storage.nokv_bucket": "NoKV bucket: %s",
+  "storage.nokv_endpoint": "NoKV endpoint: %s",
+  "knowledge.nokv_notice.label": "NoKV knowledge",
+  "knowledge.nokv_notice.description": "NoKV-backed knowledge is not browsed by TUI",
+  "knowledge.nokv_notice.content": "# NoKV knowledge\n\nNoKV-backed knowledge is not browsed by TUI. Use the agent runtime or local resolved status artifact to inspect the configured route.\n"
 }

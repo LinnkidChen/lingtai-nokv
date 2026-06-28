@@ -21,6 +21,9 @@ func buildKnowledgeFolderEntries(knowledgeDir string) []MarkdownEntry {
 	if knowledgeDir == "" {
 		return nil
 	}
+	if filepath.Base(knowledgeDir) == "knowledge" && knowledgeMountBackedByNoKV(filepath.Dir(knowledgeDir)) {
+		return []MarkdownEntry{nokvKnowledgeNoticeEntry()}
+	}
 	dirents, err := os.ReadDir(knowledgeDir)
 	if err != nil {
 		return nil

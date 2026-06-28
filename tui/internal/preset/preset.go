@@ -1738,6 +1738,7 @@ func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDi
 	// disk file is normalized on the next refresh.
 	var existingAddonsList []interface{}
 	var existingMCP map[string]interface{}
+	var existingStorage interface{}
 	existingInitPath := filepath.Join(agentDir, "init.json")
 	if existingData, err := os.ReadFile(existingInitPath); err == nil {
 		var existing map[string]interface{}
@@ -1753,6 +1754,9 @@ func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDi
 			}
 			if mcp, ok := existing["mcp"].(map[string]interface{}); ok && len(mcp) > 0 {
 				existingMCP = mcp
+			}
+			if storage, ok := existing["storage"]; ok {
+				existingStorage = storage
 			}
 		}
 	}
@@ -1788,6 +1792,9 @@ func GenerateInitJSONWithOpts(p Preset, agentName, dirName, lingtaiDir, globalDi
 	}
 	if addonsList != nil {
 		initJSON["addons"] = addonsList
+	}
+	if existingStorage != nil {
+		initJSON["storage"] = existingStorage
 	}
 
 	// Build the mcp activation map for any addon name in the list. Each entry
