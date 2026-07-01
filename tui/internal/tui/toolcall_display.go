@@ -56,7 +56,7 @@ func firstRenderedLine(body string) string {
 	return body
 }
 
-const toolCallSummaryPreviewLimit = 250
+const toolCallSummaryPreviewLimit = 400
 
 // aprioriSummaryPreviewLimit caps the generated summary text shown in the FIRST
 // Ctrl+O/detail layer. The deeper (verboseExtended) layer renders the full
