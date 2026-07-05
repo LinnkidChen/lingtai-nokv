@@ -23,10 +23,11 @@ func codexEntryIndex(t *testing.T, m LoginModel, absPath string) int {
 	return -1
 }
 
-// TestLoginModel_DefaultPoolWeightForValidAccounts verifies that with NO pool
-// file, a valid Codex account renders the default weight 1 and its row shows the
-// "pool weight" label (not "disabled").
-func TestLoginModel_DefaultPoolWeightForValidAccounts(t *testing.T) {
+// TestLoginModel_NoPoolFileShowsNotInPool verifies that with NO pool file, a
+// valid Codex account renders as absent from the pool rather than inventing a
+// phantom default weight. This keeps the display aligned with the kernel, which
+// cannot load-balance onto accounts absent from codex-auth-pool.json.
+func TestLoginModel_NoPoolFileShowsNotInPool(t *testing.T) {
 	t.Setenv("LINGTAI_TUI_DIR", "")
 	_, globalDir := withTempCodexHome(t)
 
@@ -37,27 +38,24 @@ func TestLoginModel_DefaultPoolWeightForValidAccounts(t *testing.T) {
 	idx := codexEntryIndex(t, m, acctPath)
 	m.entries[idx].Status = loginValid
 
-	if w := m.codexEntryWeight(m.entries[idx]); w != 1 {
-		t.Errorf("valid account with no pool file should default to weight 1; got %d", w)
+	if inPool, weight := m.codexEntryMembership(m.entries[idx]); inPool || weight != 0 {
+		t.Errorf("valid account with no pool file should be absent from pool; inPool=%v weight=%d", inPool, weight)
 	}
 
 	m.width = 100
 	view := m.View()
-	wantLabel := strings.TrimSpace(i18n.T("login.codex_pool_weight"))
-	// The format verb region ("pool weight: %d") — check the literal prefix.
-	prefix := wantLabel
-	if i := strings.Index(prefix, "%"); i >= 0 {
-		prefix = strings.TrimSpace(prefix[:i])
+	if !strings.Contains(view, i18n.T("login.codex_pool_not_member")) {
+		t.Errorf("view should show the not-in-pool label; view=%q", view)
 	}
-	if !strings.Contains(view, prefix) {
-		t.Errorf("view should show the pool weight label %q; view=%q", prefix, view)
+	if strings.Contains(view, strings.TrimSpace(strings.Split(i18n.T("login.codex_pool_weight"), "%")[0])) {
+		t.Errorf("view must not show a phantom pool weight when no pool file exists; view=%q", view)
 	}
 }
 
-// TestLoginModel_PlusIncrementsPoolWeight verifies the "+" key increases the
-// selected Codex account's pool weight and persists it (lazy-writing the pool
-// file), without touching any preset binding.
-func TestLoginModel_PlusIncrementsPoolWeight(t *testing.T) {
+// TestLoginModel_PlusAddsMissingAccountAtWeightOne verifies the "+" key joins
+// an absent Codex account to the pool at weight 1 and persists it
+// (lazy-writing the pool file), without touching any preset binding.
+func TestLoginModel_PlusAddsMissingAccountAtWeightOne(t *testing.T) {
 	t.Setenv("LINGTAI_TUI_DIR", "")
 	_, globalDir := withTempCodexHome(t)
 
@@ -69,17 +67,17 @@ func TestLoginModel_PlusIncrementsPoolWeight(t *testing.T) {
 	m.entries[idx].Status = loginValid
 	m.cursor = idx
 
-	// Default weight is 1; "+" should make it 2.
+	// Absent from pool; "+" should join at weight 1.
 	m, cmd := m.Update(tea.KeyPressMsg{Text: "+", Code: '+'})
 	if cmd != nil {
 		t.Fatal("editing pool weight must not start a command")
 	}
-	if got := m.poolWeights[acctPath]; got != 2 {
-		t.Fatalf("in-memory weight after + = %d, want 2", got)
+	if got := m.poolWeights[acctPath]; got != 1 {
+		t.Fatalf("in-memory weight after + = %d, want 1", got)
 	}
 	// Persisted to disk with the relative ref.
-	if got := codexPoolWeights(globalDir)[acctPath]; got != 2 {
-		t.Fatalf("persisted weight after + = %d, want 2", got)
+	if got := codexPoolWeights(globalDir)[acctPath]; got != 1 {
+		t.Fatalf("persisted weight after + = %d, want 1", got)
 	}
 }
 
@@ -97,10 +95,16 @@ func TestLoginModel_MinusClampsAtZero(t *testing.T) {
 	m.entries[idx].Status = loginValid
 	m.cursor = idx
 
-	// From default 1: one "-" → 0, another "-" stays 0.
+	// Absent accounts stay absent on "-"; "+" first joins at 1, then "-"
+	// disables to 0 and further "-" stays 0.
+	m, _ = m.Update(tea.KeyPressMsg{Text: "-", Code: '-'})
+	if _, ok := m.poolWeights[acctPath]; ok {
+		t.Fatalf("- on absent account must not add it to pool; weights=%v", m.poolWeights)
+	}
+	m, _ = m.Update(tea.KeyPressMsg{Text: "+", Code: '+'})
 	m, _ = m.Update(tea.KeyPressMsg{Text: "-", Code: '-'})
 	if got := m.poolWeights[acctPath]; got != 0 {
-		t.Fatalf("weight after first - = %d, want 0", got)
+		t.Fatalf("weight after + then - = %d, want 0", got)
 	}
 	m, _ = m.Update(tea.KeyPressMsg{Text: "-", Code: '-'})
 	if got := m.poolWeights[acctPath]; got != 0 {
@@ -122,11 +126,11 @@ func TestLoginModel_ZeroDisablesAccount(t *testing.T) {
 	m.entries[idx].Status = loginValid
 	m.cursor = idx
 
-	// Bump to 3 first so we can prove "0" is absolute, not a decrement.
+	// Bump to 2 first so we can prove "0" is absolute, not a decrement.
 	m, _ = m.Update(tea.KeyPressMsg{Text: "+", Code: '+'})
 	m, _ = m.Update(tea.KeyPressMsg{Text: "+", Code: '+'})
-	if got := m.poolWeights[acctPath]; got != 3 {
-		t.Fatalf("precondition: weight should be 3; got %d", got)
+	if got := m.poolWeights[acctPath]; got != 2 {
+		t.Fatalf("precondition: weight should be 2; got %d", got)
 	}
 	m, _ = m.Update(tea.KeyPressMsg{Text: "0", Code: '0'})
 	if got := m.poolWeights[acctPath]; got != 0 {

@@ -116,10 +116,11 @@ type LoginModel struct {
 	// poolWeights maps a Codex account's absolute token-file path to its pool
 	// weight recorded in ~/.lingtai-tui/codex-auth-pool.json. Populated in the
 	// constructor and updated in place when the user edits a weight. A path
-	// absent from this map has never been written to the pool file; the row's
-	// displayed weight then defaults per codexPoolWeightFor (1 for a valid
-	// account, 0/disabled for an invalid one). Load-balancing membership lives
-	// entirely in the pool file — editing weights here never rewrites presets.
+	// ABSENT from this map is not in the pool: the row renders "not in pool"
+	// (never a phantom default), matching the kernel runtime, which has no
+	// entry for it and falls back to the legacy token. Load-balancing
+	// membership lives entirely in the pool file — editing weights here never
+	// rewrites presets.
 	poolWeights map[string]int
 }
 
@@ -233,10 +234,11 @@ func NewLoginModel(orchDir, globalDir string) LoginModel {
 		m.activeCodexPath = p
 	}
 
-	// 6. Load the Codex pool weights so each account row can show its balance
-	// weight. Keyed by absolute token-file path; missing entries fall back to
-	// the default policy (codexPoolWeightFor) at render time. A missing/broken
-	// pool file yields an empty map — the UI still renders default weights.
+	// 6. Load the Codex pool weights so each account row can show its REAL pool
+	// state. Keyed by absolute token-file path; an account absent from this map
+	// is not in the pool and renders "not in pool" at render time. A
+	// missing/broken pool file yields an empty map — every account then reads
+	// as not-in-pool, which is exactly the truth.
 	m.poolWeights = codexPoolWeights(globalDir)
 
 	return m
@@ -518,20 +520,6 @@ func (m LoginModel) setActiveCodexAccount(entry loginEntry) LoginModel {
 	return m
 }
 
-// codexEntryValid reports whether a Codex OAuth entry is credential-valid,
-// preferring the live health result but falling back to parsing the token file
-// when health is still pending (loginChecking). Mirrors the gate in
-// setActiveCodexAccount so weight defaults and the set-active apply agree.
-func codexEntryValid(entry loginEntry) bool {
-	if entry.Status == loginValid {
-		return true
-	}
-	if entry.Status == loginChecking {
-		return codexAuthPathValid(entry.CodexPath)
-	}
-	return false
-}
-
 // codexEntryPoolPath returns the absolute token-file path a Codex entry's pool
 // weight is keyed on. Falls back to the legacy file when CodexPath is empty
 // (older entries), matching the delete path's resolution.
@@ -542,20 +530,39 @@ func (m *LoginModel) codexEntryPoolPath(entry loginEntry) string {
 	return legacyCodexAuthPath(m.globalDir)
 }
 
-// codexEntryWeight returns the effective pool weight to display for a Codex
-// entry, applying the default-weight policy for accounts not yet written to the
-// pool file (1 for valid, 0 for invalid).
-func (m *LoginModel) codexEntryWeight(entry loginEntry) int {
-	return codexPoolWeightFor(m.poolWeights, m.codexEntryPoolPath(entry), codexEntryValid(entry))
+// codexEntryMembership reports a Codex entry's real pool state: inPool is true
+// only when the pool file records the account, and weight is its stored weight.
+// The UI renders "not in pool" when inPool is false — never a phantom default —
+// so the display matches the kernel runtime, which has no entry for such an
+// account either.
+func (m *LoginModel) codexEntryMembership(entry loginEntry) (inPool bool, weight int) {
+	return codexPoolMembership(m.poolWeights, m.codexEntryPoolPath(entry))
 }
 
-// adjustCodexPoolWeight changes the selected Codex account's pool weight by
-// delta (or sets it absolutely when set is true), persists the pool file (lazily
-// created on first edit), and updates the in-memory weight map so the row
-// re-renders immediately. Weight is clamped at 0 (disabled) — there is no upper
-// bound. Non-Codex rows and the virtual add row are ignored. This never touches
-// presets: pool membership is the file's job, not the active-account binding.
-func (m LoginModel) adjustCodexPoolWeight(delta int, set bool, setTo int) LoginModel {
+// codexPoolAction names the three pool-weight keys so adjustCodexPoolWeight can
+// apply the correct membership-aware semantics for each.
+type codexPoolAction int
+
+const (
+	// poolIncrement (+/=): add an absent account at weight 1, or bump a present
+	// account's weight by 1.
+	poolIncrement codexPoolAction = iota
+	// poolDecrement (-): reduce a present account's weight by 1 (clamped at 0).
+	// An absent account stays OUT of the pool — decrement never adds it.
+	poolDecrement
+	// poolDisable (0): write an explicit weight-0 entry. This ADDS an absent
+	// account to the pool as disabled (distinct from "not in pool"), matching
+	// the existing "0 = disable" affordance.
+	poolDisable
+)
+
+// adjustCodexPoolWeight applies a pool-weight key to the selected Codex account
+// with membership-aware semantics (see codexPoolAction), persists the pool file
+// (lazily created on the first write), and updates the in-memory weight map so
+// the row re-renders immediately. Non-Codex rows and the virtual add row are
+// ignored. This never touches presets: pool membership is the pool file's job,
+// not the active-account binding.
+func (m LoginModel) adjustCodexPoolWeight(action codexPoolAction) LoginModel {
 	if m.cursor < 0 || m.cursor >= len(m.entries) || m.cursorOnVirtualRow() {
 		return m
 	}
@@ -564,13 +571,34 @@ func (m LoginModel) adjustCodexPoolWeight(delta int, set bool, setTo int) LoginM
 		return m
 	}
 	absPath := m.codexEntryPoolPath(entry)
-	newWeight := setTo
-	if !set {
-		newWeight = m.codexEntryWeight(entry) + delta
-	}
-	if newWeight < 0 {
+	inPool, cur := m.codexEntryMembership(entry)
+
+	newWeight := cur
+	switch action {
+	case poolIncrement:
+		if !inPool {
+			// Absent → join the pool at weight 1 (the "start balancing onto
+			// this account" affordance). A present account bumps by 1.
+			newWeight = 1
+		} else {
+			newWeight = cur + 1
+		}
+	case poolDecrement:
+		if !inPool {
+			// Absent stays absent — decrement must not silently enroll an
+			// account the user hasn't opted into. Nothing to persist.
+			m.message = i18n.T("login.codex_pool_absent_decrement")
+			m.messageOK = false
+			return m
+		}
+		newWeight = cur - 1
+		if newWeight < 0 {
+			newWeight = 0
+		}
+	case poolDisable:
 		newWeight = 0
 	}
+
 	if err := setCodexPoolWeight(m.globalDir, absPath, newWeight); err != nil {
 		m.message = fmt.Sprintf(i18n.T("login.codex_pool_save_failed"), err.Error())
 		m.messageOK = false
@@ -753,18 +781,19 @@ func (m LoginModel) updateNormal(msg tea.KeyPressMsg) (LoginModel, tea.Cmd) {
 		}
 		return m, nil
 	case "+", "=":
-		// Increase the selected Codex account's pool weight (load-balancing
-		// share). "=" is the unshifted "+" on most layouts, so both map here.
-		// No preset is touched — this edits ~/.lingtai-tui/codex-auth-pool.json.
-		return m.adjustCodexPoolWeight(+1, false, 0), nil
+		// Add an absent account to the pool at weight 1, or increase a present
+		// account's load-balancing share. "=" is the unshifted "+" on most
+		// layouts, so both map here. No preset is touched — this edits
+		// ~/.lingtai-tui/codex-auth-pool.json.
+		return m.adjustCodexPoolWeight(poolIncrement), nil
 	case "-", "_":
-		// Decrease the selected Codex account's pool weight, clamped at 0
-		// (disabled). "_" is the shifted "-" on most layouts.
-		return m.adjustCodexPoolWeight(-1, false, 0), nil
+		// Decrease a present account's pool weight, clamped at 0 (disabled).
+		// An account NOT in the pool stays out. "_" is the shifted "-".
+		return m.adjustCodexPoolWeight(poolDecrement), nil
 	case "0":
-		// Disable the selected Codex account in the pool (weight 0) without
-		// removing its credential.
-		return m.adjustCodexPoolWeight(0, true, 0), nil
+		// Disable the selected Codex account in the pool (explicit weight 0)
+		// without removing its credential.
+		return m.adjustCodexPoolWeight(poolDisable), nil
 	case "d", "delete", "backspace":
 		// Remove credential. For an in-flight OAuth, Del cancels the
 		// flow (matching the firstrun behavior). For a stored entry,
@@ -952,17 +981,25 @@ func (m LoginModel) View() string {
 			if entry.Provider == "codex" && m.activeCodexPath != "" && entry.CodexPath == m.activeCodexPath {
 				line += " " + lipgloss.NewStyle().Foreground(ColorActive).Render(i18n.T("login.codex_active_marker"))
 			}
-			// Show the pool (load-balancing) weight on every Codex OAuth row:
-			// "pool weight: N" when balanced onto, or "pool disabled" at weight
-			// 0. The weight lives in ~/.lingtai-tui/codex-auth-pool.json and is
+			// Show each Codex OAuth row's REAL pool state, keeping the display
+			// honest about whether load balancing is active for it:
+			//   - not recorded in the pool file → "not in pool" (the kernel
+			//     runtime has no entry either and falls back to the legacy
+			//     token, so we must not imply balancing is on);
+			//   - recorded at weight 0          → "pool disabled";
+			//   - recorded at weight N          → "pool weight: N".
+			// The pool file lives at ~/.lingtai-tui/codex-auth-pool.json and is
 			// edited with +/-/0 on the row; it is independent of the (active)
-			// single-account binding above.
+			// single-account binding above, which drives the plain codex preset.
 			if entry.Provider == "codex" && entry.IsOAuth {
-				weight := m.codexEntryWeight(entry)
+				inPool, weight := m.codexEntryMembership(entry)
 				var poolLabel string
-				if weight <= 0 {
+				switch {
+				case !inPool:
+					poolLabel = i18n.T("login.codex_pool_not_member")
+				case weight <= 0:
 					poolLabel = i18n.T("login.codex_pool_disabled")
-				} else {
+				default:
 					poolLabel = fmt.Sprintf(i18n.T("login.codex_pool_weight"), weight)
 				}
 				line += " " + StyleFaint.Render(poolLabel)
@@ -981,6 +1018,14 @@ func (m LoginModel) View() string {
 			}
 			b.WriteString(line + "\n")
 		}
+	}
+
+	// One-line explanation tying the two Codex affordances to their presets, so
+	// users don't confuse the (active) single-account binding with pool weights.
+	// Shown only when a Codex OAuth account exists (the only rows that carry
+	// either affordance). Kept short to avoid footer/note bloat.
+	if m.hasCodexOAuth() {
+		b.WriteString("\n  " + StyleFaint.Render(i18n.T("login.codex_pool_explain")) + "\n")
 	}
 
 	// Virtual Codex OAuth row — always shown so a Codex login is always

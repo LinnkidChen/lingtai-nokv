@@ -153,25 +153,24 @@ func TestLoadCodexPool_MalformedFileErrors(t *testing.T) {
 	}
 }
 
-// TestCodexPoolWeightFor_DefaultsForMissingEntries verifies the default-weight
-// policy: a valid account absent from the pool defaults to 1, an invalid one to
-// 0, and a recorded weight (including 0) always wins.
-func TestCodexPoolWeightFor_DefaultsForMissingEntries(t *testing.T) {
+// TestCodexPoolMembership_ReportsRealState verifies the truthful membership
+// lookup: an account recorded in the pool reports inPool=true with its stored
+// weight (including an explicit 0 = disabled-in-pool); an account absent from
+// the pool reports inPool=false so the UI can render "not in pool" instead of
+// inventing a default weight.
+func TestCodexPoolMembership_ReportsRealState(t *testing.T) {
 	weights := map[string]int{
 		"/x/recorded.json":  3,
 		"/x/explicit0.json": 0,
 	}
-	if w := codexPoolWeightFor(weights, "/x/valid-missing.json", true); w != 1 {
-		t.Errorf("valid missing account default = %d, want 1", w)
+	if in, w := codexPoolMembership(weights, "/x/recorded.json"); !in || w != 3 {
+		t.Errorf("recorded account: inPool=%v weight=%d, want true/3", in, w)
 	}
-	if w := codexPoolWeightFor(weights, "/x/invalid-missing.json", false); w != 0 {
-		t.Errorf("invalid missing account default = %d, want 0", w)
+	if in, w := codexPoolMembership(weights, "/x/explicit0.json"); !in || w != 0 {
+		t.Errorf("disabled-in-pool account: inPool=%v weight=%d, want true/0", in, w)
 	}
-	if w := codexPoolWeightFor(weights, "/x/recorded.json", true); w != 3 {
-		t.Errorf("recorded weight = %d, want 3", w)
-	}
-	if w := codexPoolWeightFor(weights, "/x/explicit0.json", true); w != 0 {
-		t.Errorf("explicit 0 (disabled) should win over the valid default; got %d", w)
+	if in, _ := codexPoolMembership(weights, "/x/absent.json"); in {
+		t.Error("an account absent from the pool must report inPool=false")
 	}
 }
 

@@ -193,21 +193,17 @@ func codexPoolWeights(globalDir string) map[string]int {
 	return out
 }
 
-// codexPoolWeightFor returns the effective UI weight for a token file at absPath.
-// When the pool file records the account, its stored weight wins (including an
-// explicit 0 = disabled). When the pool file is missing the account (or missing
-// entirely), a VALID account defaults to weight 1 so enabling the pool provider
-// balances across every configured account without the user first touching
-// weights; an invalid account defaults to 0 (disabled) so a dead token file is
-// never balanced onto by default.
-func codexPoolWeightFor(weights map[string]int, absPath string, valid bool) int {
-	if w, ok := weights[absPath]; ok {
-		return w
-	}
-	if valid {
-		return 1
-	}
-	return 0
+// codexPoolMembership reports an account's real pool state for absPath: inPool
+// is true only when the pool file actually records the account, and weight is
+// its stored weight (meaningful only when inPool). An account absent from the
+// pool file is NOT in the pool — the UI must say so rather than inventing a
+// default weight, because the kernel runtime has no such entry either and would
+// fall back to the legacy single token. This truthfulness is the whole point of
+// GLM's display/runtime-mismatch fix: never render a phantom "pool weight: 1"
+// for an account the pool doesn't contain.
+func codexPoolMembership(weights map[string]int, absPath string) (inPool bool, weight int) {
+	w, ok := weights[absPath]
+	return ok, w
 }
 
 // setCodexPoolWeight records weight for the token file at absPath and persists
