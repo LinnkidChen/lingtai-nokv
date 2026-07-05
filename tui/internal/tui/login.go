@@ -156,28 +156,32 @@ func NewSetupCredentialsModel(orchDir, globalDir string) LoginModel {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// codexAccountDisplay returns the credential-row display string for a Codex
-// account: the fixed "OAuth" tag followed by a recognizable, non-secret account
-// name so multiple accounts can be told apart at a glance. The name prefers the
+// codexAccountName returns a recognizable, non-secret account name so
+// multiple Codex accounts can be told apart at a glance. The name prefers the
 // account email; falls back to the per-account file slug; and, for the legacy
 // single-account file with no stored email, uses the localized default-account
-// label (matching PresetEditorModel.codexBoundAccountLabel). It never renders a
-// bare "OAuth", and never exposes token material — only the email/slug already
-// derived for display. Kept in login.go (not codex_auth_store.go) so the store
-// helper stays free of the i18n dependency.
-func codexAccountDisplay(acct codexAccount) string {
-	name := acct.Email
-	if name == "" {
-		if acct.Legacy {
-			name = i18n.T("codex.account_default")
-		} else {
-			// codexAccount.Label() derives the file slug for a per-account file
-			// (its own fallback for the legacy case is a plain-English "default",
-			// which we deliberately override above with the localized label).
-			name = acct.Label()
-		}
+// label (matching PresetEditorModel.codexBoundAccountLabel). It never exposes
+// token material — only the email/slug already derived for display. Kept in
+// login.go (not codex_auth_store.go) so the store helper stays free of the i18n
+// dependency.
+func codexAccountName(acct codexAccount) string {
+	name := strings.TrimSpace(acct.Email)
+	if name != "" {
+		return name
 	}
-	return "OAuth — " + name
+	if acct.Legacy {
+		return i18n.T("codex.account_default")
+	}
+	// codexAccount.Label() derives the file slug for a per-account file
+	// (its own fallback for the legacy case is a plain-English "default",
+	// which we deliberately override above with the localized label).
+	return acct.Label()
+}
+
+// codexAccountDisplay returns the credential-row display string for a Codex
+// account: the fixed "OAuth" tag followed by the shared account name.
+func codexAccountDisplay(acct codexAccount) string {
+	return "OAuth — " + codexAccountName(acct)
 }
 
 // providerBaseURL returns the default API base URL for known providers.
