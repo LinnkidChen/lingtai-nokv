@@ -1,0 +1,236 @@
+package tui
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// Codex pool (load-balancing) storage.
+//
+// The kernel's `codex-pool` provider reads a NON-SECRET pool file that lists the
+// Codex OAuth token files to load-balance across, each with an integer weight.
+// The pool file is the single source of truth for load balancing — presets do
+// NOT encode weights, and enabling the pool never rewrites saved presets. This
+// file owns loading/saving that pool file; the token files themselves stay put
+// (legacy ~/.lingtai-tui/codex-auth.json and per-account
+// ~/.lingtai-tui/codex-auth/<slug>.json) and are never read here.
+//
+// Contract (must match the kernel):
+//
+//	Default path:
+//	  $LINGTAI_TUI_DIR/codex-auth-pool.json  when LINGTAI_TUI_DIR is set;
+//	  otherwise ~/.lingtai-tui/codex-auth-pool.json.
+//
+//	Schema:
+//	  {"version": 1, "accounts": [{"path": "codex-auth.json", "weight": 1}, ...]}
+//
+//	Rules:
+//	  - `path` is TUI-dir-relative for token files under the TUI dir; the legacy
+//	    file serializes as "codex-auth.json", per-account as
+//	    "codex-auth/<slug>.json". Files outside the TUI dir fall back to a
+//	    "~/"-prefixed or absolute ref.
+//	  - Store only paths/refs and integer weights — NEVER token contents.
+//	  - Weight 0 means the account is disabled (present but not balanced onto).
+//
+// Nothing here reads, logs, or writes token material.
+
+// codexPoolFileName is the non-secret pool file's basename, shared with the
+// kernel's reader.
+const codexPoolFileName = "codex-auth-pool.json"
+
+// codexPoolVersion is the schema version written into the pool file.
+const codexPoolVersion = 1
+
+// codexPoolAccount is one balanced account: a stable ref to its token file plus
+// an integer weight. Weight 0 disables the account without dropping it.
+type codexPoolAccount struct {
+	Path   string `json:"path"`
+	Weight int    `json:"weight"`
+}
+
+// codexPool is the on-disk pool file shape.
+type codexPool struct {
+	Version  int                `json:"version"`
+	Accounts []codexPoolAccount `json:"accounts"`
+}
+
+// codexPoolPath returns the absolute path of the pool file. LINGTAI_TUI_DIR
+// wins when set (matching the kernel reader); otherwise the file lives directly
+// under globalDir (~/.lingtai-tui). globalDir is only consulted as the fallback
+// base, so the two readers agree on the location.
+func codexPoolPath(globalDir string) string {
+	if base := strings.TrimSpace(os.Getenv("LINGTAI_TUI_DIR")); base != "" {
+		return filepath.Join(base, codexPoolFileName)
+	}
+	return filepath.Join(globalDir, codexPoolFileName)
+}
+
+// codexPoolBaseDir returns the directory the pool file lives in — the same base
+// that relative `path` entries resolve against. LINGTAI_TUI_DIR wins when set,
+// mirroring codexPoolPath, so refs written here round-trip through the kernel.
+func codexPoolBaseDir(globalDir string) string {
+	if base := strings.TrimSpace(os.Getenv("LINGTAI_TUI_DIR")); base != "" {
+		return base
+	}
+	return globalDir
+}
+
+// codexPoolRefForPath maps an absolute token-file path to the stable ref stored
+// in the pool file. Unlike codexAuthRefForPath (which maps the legacy file to ""
+// to preserve preset fallback semantics), the pool wants an EXPLICIT, stable
+// relative ref for every account:
+//   - a token file under the TUI dir → its TUI-dir-relative path
+//     ("codex-auth.json" for the legacy file, "codex-auth/<slug>.json" per-account);
+//   - a file under the user's home but outside the TUI dir → "~/"-prefixed;
+//   - anything else → the absolute path unchanged.
+func codexPoolRefForPath(globalDir, absPath string) string {
+	if absPath == "" {
+		return ""
+	}
+	base := codexPoolBaseDir(globalDir)
+	if rel, err := filepath.Rel(base, absPath); err == nil && rel != "" &&
+		!strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+		return filepath.ToSlash(rel)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		if rel, err := filepath.Rel(home, absPath); err == nil && !strings.HasPrefix(rel, "..") {
+			return "~/" + filepath.ToSlash(rel)
+		}
+	}
+	return absPath
+}
+
+// resolveCodexPoolRef expands a pool `path` entry to an absolute path — the
+// inverse of codexPoolRefForPath. A bare relative ref resolves under the pool
+// base dir (so "codex-auth.json" lands on the legacy file); "~/" and absolute
+// refs are honored. Empty refs resolve to "" so callers can skip them.
+func resolveCodexPoolRef(globalDir, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return ""
+	}
+	if ref == "~" {
+		if home, err := os.UserHomeDir(); err == nil {
+			return home
+		}
+		return ref
+	}
+	if strings.HasPrefix(ref, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, ref[2:])
+		}
+		return ref
+	}
+	if filepath.IsAbs(ref) {
+		return ref
+	}
+	return filepath.Join(codexPoolBaseDir(globalDir), ref)
+}
+
+// loadCodexPool reads the pool file. A missing file is NOT an error: it returns
+// an empty pool (Version defaulted, no accounts) so callers can treat "no pool
+// yet" and "empty pool" identically. A malformed file returns the parse error so
+// the caller can surface it rather than silently clobbering the user's edits.
+func loadCodexPool(globalDir string) (codexPool, error) {
+	path := codexPoolPath(globalDir)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return codexPool{Version: codexPoolVersion}, nil
+		}
+		return codexPool{}, err
+	}
+	var pool codexPool
+	if err := json.Unmarshal(data, &pool); err != nil {
+		return codexPool{}, err
+	}
+	if pool.Version == 0 {
+		pool.Version = codexPoolVersion
+	}
+	return pool, nil
+}
+
+// saveCodexPool writes the pool file (version stamped, parent created). The file
+// is non-secret — it holds only refs and weights — so it is written 0644, unlike
+// the 0600 token files. Callers build the accounts list from
+// codexPoolRefForPath so only stable relative refs land on disk.
+func saveCodexPool(globalDir string, pool codexPool) error {
+	pool.Version = codexPoolVersion
+	if pool.Accounts == nil {
+		pool.Accounts = []codexPoolAccount{}
+	}
+	path := codexPoolPath(globalDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(pool, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// codexPoolWeights returns a map from resolved ABSOLUTE token-file path to the
+// weight recorded in the pool file. Entries whose ref can't be resolved are
+// skipped. Used by the credentials UI to look up each Codex account row's weight
+// without re-parsing the pool per row. A missing pool file yields an empty map
+// (callers apply the default-weight policy on top).
+func codexPoolWeights(globalDir string) map[string]int {
+	pool, err := loadCodexPool(globalDir)
+	if err != nil {
+		return map[string]int{}
+	}
+	out := make(map[string]int, len(pool.Accounts))
+	for _, acct := range pool.Accounts {
+		abs := resolveCodexPoolRef(globalDir, acct.Path)
+		if abs == "" {
+			continue
+		}
+		out[abs] = acct.Weight
+	}
+	return out
+}
+
+// codexPoolWeightFor returns the effective UI weight for a token file at absPath.
+// When the pool file records the account, its stored weight wins (including an
+// explicit 0 = disabled). When the pool file is missing the account (or missing
+// entirely), a VALID account defaults to weight 1 so enabling the pool provider
+// balances across every configured account without the user first touching
+// weights; an invalid account defaults to 0 (disabled) so a dead token file is
+// never balanced onto by default.
+func codexPoolWeightFor(weights map[string]int, absPath string, valid bool) int {
+	if w, ok := weights[absPath]; ok {
+		return w
+	}
+	if valid {
+		return 1
+	}
+	return 0
+}
+
+// setCodexPoolWeight records weight for the token file at absPath and persists
+// the pool file, creating it on first edit (the lazy-write policy). The account
+// is added if absent, updated in place if present. Other accounts and their
+// weights are preserved. absPath is converted to a stable ref via
+// codexPoolRefForPath before storage so only relative/`~/` refs are written.
+func setCodexPoolWeight(globalDir, absPath string, weight int) error {
+	if weight < 0 {
+		weight = 0
+	}
+	pool, err := loadCodexPool(globalDir)
+	if err != nil {
+		// A malformed pool file must not be silently overwritten — surface it.
+		return err
+	}
+	ref := codexPoolRefForPath(globalDir, absPath)
+	for i := range pool.Accounts {
+		if resolveCodexPoolRef(globalDir, pool.Accounts[i].Path) == absPath {
+			pool.Accounts[i].Weight = weight
+			return saveCodexPool(globalDir, pool)
+		}
+	}
+	pool.Accounts = append(pool.Accounts, codexPoolAccount{Path: ref, Weight: weight})
+	return saveCodexPool(globalDir, pool)
+}

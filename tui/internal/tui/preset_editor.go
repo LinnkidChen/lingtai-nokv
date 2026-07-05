@@ -150,6 +150,10 @@ var providerModels = map[string][]string{
 	// included or excluded (e.g. gpt-5.5-pro is ChatGPT-Pro-only and not
 	// served on the codex endpoint, so we omit it to avoid 4xx breakage).
 	"codex": {"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"},
+	// codex-pool serves the same ChatGPT-OAuth models as codex — it only
+	// changes which token file each request routes through (the pool), not the
+	// model catalog. Keep the two lists identical.
+	"codex-pool": {"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"},
 	// Claude Agent SDK uses Claude Code CLI aliases, not dated API IDs.
 	// Keep opus first to match Jason's requested Opus 4.8 default;
 	// sonnet/haiku remain selectable for cheaper or faster runs.
