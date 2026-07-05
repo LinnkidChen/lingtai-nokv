@@ -216,7 +216,7 @@ func List() ([]Preset, error) {
 	templateOrder := map[string]int{
 		"minimax": 0, "zhipu": 1, "mimo": 2, "deepseek": 3,
 		"kimi": 4, "nvidia": 5, "openrouter": 6, "codex": 7,
-		"claude-agent-sdk": 8, "custom": 9,
+		"codex-pool": 8, "claude-agent-sdk": 9, "custom": 10,
 	}
 	sort.Slice(templates, func(i, j int) bool {
 		return templateOrder[templates[i].Name] < templateOrder[templates[j].Name]
@@ -479,6 +479,7 @@ func BuiltinPresets() []Preset {
 		nvidiaPreset(),
 		openrouterPreset(),
 		codexPreset(),
+		codexPoolPreset(),
 		claudeAgentSDKPreset(),
 		customPreset(),
 	}
@@ -499,6 +500,8 @@ var builtinNames = map[string]bool{
 	"openrouter":       true,
 	"codex":            true,
 	"codex_oauth":      true,
+	"codex-pool":       true,
+	"codex_pool":       true,
 	"claude-agent-sdk": true,
 	"claude_agent_sdk": true,
 	"custom":           true,
@@ -742,6 +745,16 @@ func resolveOneRef(ref string, existingKeys map[string]string, auth AuthState) R
 			} else {
 				r.HasKey = auth.CodexOAuthConfigured
 			}
+		case provider == "codex-pool" || provider == "codex_pool":
+			// The pool provider load-balances across the Codex accounts listed
+			// in ~/.lingtai-tui/codex-auth-pool.json (weights live there, not in
+			// the preset). It reuses the same ChatGPT-OAuth token files as the
+			// codex provider, so it is credential-valid whenever ANY Codex OAuth
+			// account is configured — the same signal the single-account codex
+			// preset uses for its legacy fallback. Judging the pool membership
+			// itself is the kernel's job at runtime; the credential guard only
+			// needs "is at least one Codex account logged in".
+			r.HasKey = auth.CodexOAuthConfigured
 		case provider == "claude-agent-sdk" || provider == "claude_agent_sdk":
 			// Claude Agent SDK declares no api_key_env by design — it
 			// authenticates through the local Claude Code CLI login. Valid
@@ -1085,6 +1098,38 @@ func codexPreset() Preset {
 				// reasoning effort by default. Carried explicitly
 				// here (not a UI-only fallback) so the running session and
 				// generated init.json actually receive xhigh.
+				"thinking": "xhigh",
+			},
+			"capabilities": map[string]interface{}{
+				"web_search": cx,
+				"vision":     cx,
+				"skills":     skillsDefault(),
+			},
+		},
+	}
+}
+
+// codexPoolPreset mirrors the standard codex preset but binds the kernel's
+// `codex-pool` provider, which load-balances across the ChatGPT accounts listed
+// in the non-secret ~/.lingtai-tui/codex-auth-pool.json pool file (weights and
+// account membership live THERE, not in this preset). It is purely how a user
+// opts into pooling; selecting it never rewrites other presets. Model, endpoint,
+// thinking level, and capabilities match codexPreset() so behavior is identical
+// apart from the provider routing to the pool.
+func codexPoolPreset() Preset {
+	cx := map[string]interface{}{"provider": "codex-pool", "api_key_env": ""}
+	return Preset{
+		Name:        "codex-pool",
+		Description: PresetDescription{Summary: "ChatGPT account pool — load-balances across your Codex accounts"},
+		Manifest: map[string]interface{}{
+			"llm": map[string]interface{}{
+				// Same frontier default and endpoint as the single-account
+				// codex preset; only the provider differs so the kernel routes
+				// through the pool. base_url stays the official Codex endpoint —
+				// the pool selects among token files, not endpoints.
+				"provider": "codex-pool", "model": "gpt-5.5",
+				"api_key": nil, "api_key_env": "",
+				"base_url": "https://chatgpt.com/backend-api/codex",
 				"thinking": "xhigh",
 			},
 			"capabilities": map[string]interface{}{
