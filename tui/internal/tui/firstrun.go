@@ -760,9 +760,17 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 					} else {
 						m.existingKeys[envName] = msg.APIKey
 					}
-					if cfg, err := config.LoadConfig(m.globalDir); err == nil {
-						cfg.Keys = m.existingKeys
-						_ = config.SaveConfig(m.globalDir, cfg)
+					cfg, err := config.LoadConfig(m.globalDir)
+					if err != nil {
+						m.message = fmt.Sprintf("Failed to save API key: %v", err)
+						m.step = stepPickPreset
+						return m, nil
+					}
+					cfg.Keys = m.existingKeys
+					if err := config.SaveConfig(m.globalDir, cfg); err != nil {
+						m.message = fmt.Sprintf("Failed to save API key: %v", err)
+						m.step = stepPickPreset
+						return m, nil
 					}
 				}
 			}
@@ -1468,9 +1476,16 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 				key := strings.TrimSpace(m.presetKeyInput.Value())
 				if key != "" {
 					m.existingKeys[envName] = key
-					cfg, _ := config.LoadConfig(m.globalDir)
+					cfg, err := config.LoadConfig(m.globalDir)
+					if err != nil {
+						m.message = fmt.Sprintf("Failed to save API key: %v", err)
+						return m, nil
+					}
 					cfg.Keys = m.existingKeys
-					config.SaveConfig(m.globalDir, cfg)
+					if err := config.SaveConfig(m.globalDir, cfg); err != nil {
+						m.message = fmt.Sprintf("Failed to save API key: %v", err)
+						return m, nil
+					}
 				} else if m.existingKeys[envName] == "" {
 					return m, nil
 				}
