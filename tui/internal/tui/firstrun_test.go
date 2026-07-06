@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/anthropics/lingtai-tui/i18n"
@@ -768,5 +769,105 @@ func TestPickPreset_SetupModeCodexEnterRoutesToCredentials(t *testing.T) {
 	}
 	if vc.View != "login" {
 		t.Fatalf("expected ViewChangeMsg{View:\"login\"}; got View=%q", vc.View)
+	}
+}
+
+// failingGlobalDir returns a globalDir where config.SaveConfig is guaranteed
+// to fail: it writes config.json fine but then WriteEnvFile chokes because the
+// .env path is a directory (os.ReadFile → EISDIR). Deterministic, no chmod.
+func failingGlobalDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.MkdirAll(config.EnvFilePath(dir), 0o755); err != nil {
+		t.Fatalf("mkdir .env-as-dir: %v", err)
+	}
+	// Sanity: SaveConfig really does fail for this dir.
+	if err := config.SaveConfig(dir, config.Config{Keys: map[string]string{"MINIMAX_API_KEY": "x"}}); err == nil {
+		t.Fatalf("expected SaveConfig to fail when .env is a directory")
+	}
+	return dir
+}
+
+// TestPresetKeyNext_SaveConfigErrorSurfacesAndDoesNotAdvance covers the
+// stepPresetKey "Next" path (issue #509): when persisting the pasted API key
+// fails, the wizard must surface the error and stay on stepPresetKey rather
+// than silently advancing into the capabilities/runtime page as though the
+// key was saved.
+func TestPresetKeyNext_SaveConfigErrorSurfacesAndDoesNotAdvance(t *testing.T) {
+	dir := failingGlobalDir(t)
+	keyInput := textarea.New()
+	keyInput.SetValue("sk-test-key")
+	m := FirstRunModel{
+		step:         stepPresetKey,
+		globalDir:    dir,
+		existingKeys: map[string]string{},
+		keyFieldIdx:  2, // Next button
+		cursor:       0,
+		presets: []preset.Preset{
+			{
+				Name: "minimax",
+				Manifest: map[string]interface{}{
+					"llm": map[string]interface{}{
+						"provider":    "minimax",
+						"api_key_env": "MINIMAX_API_KEY",
+					},
+				},
+			},
+		},
+		presetKeyInput: keyInput,
+	}
+
+	m, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	if m.step != stepPresetKey {
+		t.Fatalf("save failure must keep the wizard on stepPresetKey; got step %v", m.step)
+	}
+	if cmd != nil {
+		t.Fatalf("save failure should return nil cmd, not advance into capabilities")
+	}
+	if !strings.Contains(m.message, "Failed to save API key:") {
+		t.Fatalf("expected a visible API key save error; got message %q", m.message)
+	}
+}
+
+// TestPresetEditorCommit_KeySaveErrorSurfacesAndDoesNotSavePreset covers the
+// PresetEditorCommitMsg path (issue #509): when the edited preset carries a new
+// API key but persisting it fails, the wizard must surface the error and must
+// not proceed into the preset-save/advance path as though the key was stored.
+func TestPresetEditorCommit_KeySaveErrorSurfacesAndDoesNotSavePreset(t *testing.T) {
+	dir := failingGlobalDir(t)
+	// Isolate HOME: if the regression returns and the handler falls through
+	// to preset.Save, it would write under ~/.lingtai-tui/presets/saved.
+	// Point HOME at a temp dir so we can assert nothing was written there.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	m := FirstRunModel{
+		step:         stepPickPreset,
+		globalDir:    dir,
+		existingKeys: map[string]string{},
+	}
+
+	commit := PresetEditorCommitMsg{
+		Preset: preset.Preset{
+			Name: "minimax",
+			Manifest: map[string]interface{}{
+				"llm": map[string]interface{}{
+					"provider":    "minimax",
+					"api_key_env": "MINIMAX_API_KEY",
+				},
+			},
+		},
+		APIKeySet: true,
+		APIKey:    "sk-edited-key",
+	}
+
+	m, _ = m.Update(commit)
+
+	if !strings.Contains(m.message, "Failed to save API key:") {
+		t.Fatalf("expected a visible API key save error; got message %q", m.message)
+	}
+	savedPath := filepath.Join(home, ".lingtai-tui", "presets", "saved", "minimax.json")
+	if _, err := os.Stat(savedPath); !os.IsNotExist(err) {
+		t.Fatalf("key save failure must not persist the preset; stat %q err = %v", savedPath, err)
 	}
 }
