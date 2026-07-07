@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -624,7 +625,7 @@ func printHelp() {
 	fmt.Println("       lingtai-tui purge [dir]")
 	fmt.Println("       lingtai-tui list [--detailed|-d] [--admin] [dir]")
 	fmt.Println("       lingtai-tui suspend [dir]")
-	fmt.Println("       lingtai-tui clean")
+	fmt.Println("       lingtai-tui clean [--force]")
 	fmt.Println("       lingtai-tui postman [--port N] [dir ...]")
 	fmt.Println("       lingtai-tui bootstrap")
 	fmt.Println("       lingtai-tui presets [--saved-only] [--templates-only]")
@@ -639,7 +640,8 @@ func printHelp() {
 	fmt.Println("  list         Show running agents as a decentralized contact-book view.")
 	fmt.Println("               Marks main agents; --detailed adds names/state/path; --admin adds admin flags.")
 	fmt.Println("  suspend      Gracefully suspend agents via signal files (all, or those in <dir>)")
-	fmt.Println("  clean        Suspend agents in current directory, then remove .lingtai/")
+	fmt.Println("  clean        Suspend agents in current directory, then remove .lingtai/.")
+	fmt.Println("               Refuses to delete while agents are still alive; --force overrides.")
 	fmt.Println("  postman      Start the mail relay daemon (UDP, port 7777 by default)")
 	fmt.Println("  bootstrap       Re-extract embedded skills to ~/.lingtai-tui/utilities/")
 	fmt.Println("  presets      List available presets as JSON (for agent consumption)")
@@ -820,6 +822,17 @@ func showWelcome(globalDir string) {
 }
 
 func cleanMain() {
+	force := false
+	for _, arg := range os.Args[2:] {
+		switch arg {
+		case "--force", "-f":
+			force = true
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown flag for clean: %s\n", arg)
+			os.Exit(1)
+		}
+	}
+
 	projectDir, _ := os.Getwd()
 	projectDir, _ = filepath.Abs(projectDir)
 	lingtaiDir := filepath.Join(projectDir, ".lingtai")
@@ -853,6 +866,35 @@ func cleanMain() {
 		return
 	}
 
+	if err := cleanProject(lingtaiDir, force, 10*time.Second); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("Removed %s\n", lingtaiDir)
+	fmt.Println()
+	fmt.Println("To also remove global config, run:")
+	fmt.Println("  rm -rf ~/.lingtai-tui")
+}
+
+// cleanProject signals every agent under lingtaiDir to suspend, waits up to
+// waitTimeout for their heartbeats to go stale, and removes lingtaiDir.
+// If any agent is still alive after the timeout — including agents whose
+// .suspend signal could not be written — nothing is removed and the
+// survivors are listed in the returned error: deleting a live agent's
+// working directory strands the process and destroys state it is still
+// writing (issue #488). force skips the survivor guard, not the suspend
+// attempt; it also overrides a failed agent discovery, which otherwise
+// refuses to remove anything because live agents could be hiding in an
+// unlistable directory.
+func cleanProject(lingtaiDir string, force bool, waitTimeout time.Duration) error {
+	agents, err := fs.DiscoverAgents(lingtaiDir)
+	if err != nil {
+		if !force {
+			return fmt.Errorf("Cannot list agents under %s: %v\nNot removing it: a live agent could be hiding in there. Fix the error, or re-run with --force to delete anyway.", lingtaiDir, err)
+		}
+		fmt.Fprintf(os.Stderr, "Warning: cannot list agents under %s (%v); removing anyway (--force)\n", lingtaiDir, err)
+	}
+
 	// Signal all agents at once (touch .suspend in every folder)
 	var alive []string
 	for _, agent := range agents {
@@ -860,15 +902,17 @@ func cleanMain() {
 			continue
 		}
 		suspendFile := filepath.Join(agent.WorkingDir, ".suspend")
-		os.WriteFile(suspendFile, []byte(""), 0o644)
+		if err := os.WriteFile(suspendFile, []byte(""), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to signal %s: %v\n", agent.WorkingDir, err)
+		}
 		if fs.IsAlive(agent.WorkingDir, 3.0) {
 			alive = append(alive, agent.WorkingDir)
 		}
 	}
-	// Wait for all to die (poll, max 10s)
+	// Wait for all to die (poll, max waitTimeout)
 	if len(alive) > 0 {
 		fmt.Printf("Suspending %d agent(s)...\n", len(alive))
-		deadline := time.Now().Add(10 * time.Second)
+		deadline := time.Now().Add(waitTimeout)
 		for time.Now().Before(deadline) {
 			allDead := true
 			for _, dir := range alive {
@@ -884,15 +928,47 @@ func cleanMain() {
 		}
 	}
 
-	// Remove .lingtai/
-	if err := os.RemoveAll(lingtaiDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to remove %s: %v\n", lingtaiDir, err)
-		os.Exit(1)
+	// Survivor guard: refuse to delete a live agent's body. Re-discover
+	// before checking so agents that appeared during the wait window are
+	// guarded too, not just the ones signaled above.
+	guarded := append([]string(nil), alive...)
+	if current, err := fs.DiscoverAgents(lingtaiDir); err == nil {
+		seen := make(map[string]bool, len(guarded))
+		for _, dir := range guarded {
+			seen[dir] = true
+		}
+		for _, agent := range current {
+			if !agent.IsHuman && !seen[agent.WorkingDir] {
+				guarded = append(guarded, agent.WorkingDir)
+			}
+		}
+	} else if !force {
+		return fmt.Errorf("Cannot re-list agents under %s before deleting: %v\nNot removing it. Fix the error, or re-run with --force to delete anyway.", lingtaiDir, err)
 	}
-	fmt.Printf("Removed %s\n", lingtaiDir)
-	fmt.Println()
-	fmt.Println("To also remove global config, run:")
-	fmt.Println("  rm -rf ~/.lingtai-tui")
+	var survivors []string
+	for _, dir := range guarded {
+		if fs.IsAlive(dir, 3.0) {
+			survivors = append(survivors, dir)
+		}
+	}
+	if len(survivors) > 0 {
+		if !force {
+			var b strings.Builder
+			fmt.Fprintf(&b, "%d agent(s) still alive after %s:\n", len(survivors), waitTimeout)
+			for _, dir := range survivors {
+				fmt.Fprintf(&b, "  %s\n", dir)
+			}
+			fmt.Fprintf(&b, "Not removing %s.\nWait for them to stop, or re-run with --force to delete anyway.", lingtaiDir)
+			return errors.New(b.String())
+		}
+		fmt.Fprintf(os.Stderr, "Warning: removing %s with %d live agent(s) (--force)\n",
+			lingtaiDir, len(survivors))
+	}
+
+	if err := os.RemoveAll(lingtaiDir); err != nil {
+		return fmt.Errorf("Failed to remove %s: %v", lingtaiDir, err)
+	}
+	return nil
 }
 
 func postmanMain() {

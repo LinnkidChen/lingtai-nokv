@@ -136,7 +136,50 @@ func SaveTUIConfig(globalDir string, tc TUIConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(globalDir, "tui_config.json"), data, 0o644)
+	return atomicWriteFile(filepath.Join(globalDir, "tui_config.json"), data, 0o644)
+}
+
+// atomicWriteFile writes data to a unique sibling temp file, syncs, and
+// renames it over path. A crash mid-write leaves the old content intact
+// instead of a truncated file — config.json and .env carry API keys, so a
+// torn write is unrecoverable for the user (issue #508).
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	fail := func(err error) error {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	// Make the rename itself durable by syncing the parent directory.
+	// Best-effort: some filesystems reject fsync on directories, and the
+	// rename cannot be undone at this point anyway.
+	if dir, err := os.Open(filepath.Dir(path)); err == nil {
+		_ = dir.Sync()
+		_ = dir.Close()
+	}
+	return nil
 }
 
 func GlobalDir() (string, error) {
@@ -178,7 +221,7 @@ func SaveConfig(dir string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "config.json"), data, 0o600); err != nil {
+	if err := atomicWriteFile(filepath.Join(dir, "config.json"), data, 0o600); err != nil {
 		return err
 	}
 	return WriteEnvFile(dir, cfg)
@@ -252,7 +295,7 @@ func writeEnvLines(path string, lines []string) error {
 	if body != "" {
 		body += "\n"
 	}
-	return os.WriteFile(path, []byte(body), perm)
+	return atomicWriteFile(path, []byte(body), perm)
 }
 
 // WriteEnvFile writes API keys from config to ~/.lingtai-tui/.env while
