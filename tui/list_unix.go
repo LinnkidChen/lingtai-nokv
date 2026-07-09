@@ -5,11 +5,12 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/anthropics/lingtai-tui/internal/processscan"
 )
 
 func listMain() {
@@ -18,54 +19,14 @@ func listMain() {
 		listUsageError(err)
 	}
 
-	out, err := exec.Command("ps", "aux").Output()
+	found, err := processscan.FindAllAgentProcesses()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error running ps: %v\n", err)
 		os.Exit(1)
 	}
-
-	var procs []listProc
-	for _, line := range strings.Split(string(out), "\n") {
-		if !strings.Contains(line, "lingtai run") || strings.Contains(line, "grep") {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 11 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[1])
-		if err != nil || pid == os.Getpid() {
-			continue
-		}
-
-		// Parse agent dir from command args: ... lingtai run <dir>
-		var agentDir string
-		for i, f := range fields {
-			if f == "run" && i+1 < len(fields) {
-				agentDir = fields[i+1]
-				break
-			}
-		}
-
-		// If filtering by dir, only include processes under <dir>/.lingtai/
-		if opts.FilterDir != "" {
-			lingtaiPrefix := filepath.Join(opts.FilterDir, ".lingtai") + string(filepath.Separator)
-			if !strings.HasPrefix(agentDir, lingtaiPrefix) {
-				continue
-			}
-		}
-
-		agent := filepath.Base(agentDir)
-		project := ""
-		// Walk up to find .lingtai parent
-		if idx := strings.Index(agentDir, "/.lingtai/"); idx >= 0 {
-			project = agentDir[:idx]
-		}
-
-		// Get process start time from ps output. This is replaced with elapsed time below when available.
-		elapsed := fields[9]
-
-		procs = append(procs, listProc{PID: fields[1], Uptime: elapsed, Agent: agent, Project: project, Dir: agentDir})
+	procs := listProcsFromAgentProcesses(found, opts.FilterDir, os.Getpid())
+	for i := range procs {
+		procs[i].Uptime = humanUptimeFromEtime(procs[i].Uptime)
 	}
 
 	if len(procs) == 0 {
@@ -81,38 +42,6 @@ func listMain() {
 		return
 	}
 
-	// Also try to get elapsed time via ps -o etimes.
-	pidStrs := make([]string, len(procs))
-	procByPID := map[string]*listProc{}
-	for i := range procs {
-		pidStrs[i] = procs[i].PID
-		procByPID[procs[i].PID] = &procs[i]
-	}
-	if out2, err := exec.Command("ps", "-o", "pid=,etimes=", "-p", strings.Join(pidStrs, ",")).Output(); err == nil {
-		for _, line := range strings.Split(string(out2), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				continue
-			}
-			secs, err := strconv.Atoi(fields[1])
-			if err != nil {
-				continue
-			}
-			d := time.Duration(secs) * time.Second
-			elapsed := ""
-			if d >= 24*time.Hour {
-				elapsed = fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
-			} else if d >= time.Hour {
-				elapsed = fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
-			} else {
-				elapsed = fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
-			}
-			if proc := procByPID[fields[0]]; proc != nil {
-				proc.Uptime = elapsed
-			}
-		}
-	}
-
 	phantomDirs := detectPhantomDirs(procs, opts.FilterDir)
 	annotateListProcs(procs)
 	procs = collapseListProcsByAgentDir(procs)
@@ -123,6 +52,51 @@ func listMain() {
 	printList(os.Stdout, procs, phantomDirs, opts, true)
 	fmt.Printf("\n%d process(es) running.\n", len(procs))
 	printListWarnings(os.Stdout, phantomDirs, opts.FilterDir)
+}
+
+// humanUptimeFromEtime converts a ps etime value ([[dd-]hh:]mm:ss) into the
+// human-readable uptime the UPTIME column has always shown ("2d 3h", "1h 2m",
+// "4m 9s"). Unparseable values are shown as-is rather than guessed.
+func humanUptimeFromEtime(etime string) string {
+	secs, ok := parseEtimeSeconds(etime)
+	if !ok {
+		return etime
+	}
+	d := time.Duration(secs) * time.Second
+	switch {
+	case d >= 24*time.Hour:
+		return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
+	case d >= time.Hour:
+		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+	default:
+		return fmt.Sprintf("%dm %ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+}
+
+func parseEtimeSeconds(etime string) (int, bool) {
+	etime = strings.TrimSpace(etime)
+	days := 0
+	if day, rest, ok := strings.Cut(etime, "-"); ok {
+		d, err := strconv.Atoi(day)
+		if err != nil || d < 0 {
+			return 0, false
+		}
+		days = d
+		etime = rest
+	}
+	parts := strings.Split(etime, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return 0, false
+	}
+	secs := 0
+	for _, part := range parts {
+		v, err := strconv.Atoi(part)
+		if err != nil || v < 0 {
+			return 0, false
+		}
+		secs = secs*60 + v
+	}
+	return days*24*60*60 + secs, true
 }
 
 func detectPhantomDirs(procs []listProc, filterDir string) map[string]bool {
