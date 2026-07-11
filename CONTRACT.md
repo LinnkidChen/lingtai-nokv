@@ -6,7 +6,6 @@ related_files:
   - README.md
   - dev-guide-skill/SKILL.md
   - tui/architecture_documents_test.go
-  - tui/architecture_documents_fixtures_test.go
 maintenance: |
   This file is the normative root of the distributed code interface definition
   system and the contract-of-contract for the LingTai Go repository (the two
@@ -249,11 +248,11 @@ The root contract has exactly `name`, `contract_version`, `related_files`, and
 
 The governed-child rules in this section (and in `## Body contract`,
 `## Link semantics`, and `## Maintenance contract`) are the **normative target
-schema** for the first governed child, not invariants the validator enforces
+schema** for the first governed child, not invariants the smoke test enforces
 today — the repository has zero governed children and `## Validation` describes
-what is actually mechanically checked now. The first governed-child PR implements
-and enforces these child rules; until then the zero-child sentinel rejects any
-child edge.
+what is actually checked now. A first governed-child PR must justify and add only
+the focused validation its concrete graph needs; until then these rules remain
+review-owned.
 
 Every governed child contract has exactly these frontmatter keys, in this
 order:
@@ -330,45 +329,21 @@ binary, on any supported OS) no longer conform.
 
 ## Validation
 
-`tui/architecture_documents_test.go` and its fixtures in
-`tui/architecture_documents_fixtures_test.go` — a Go test in the existing TUI
-module, run with `cd tui && go test ./...` — validate the machine-checkable
-invariants that exist **today**, at this zero-governed-children stage. The
-enforced invariants are all about the two roots and their graph:
+`tui/architecture_documents_test.go` is a small real-repository smoke test in
+the existing TUI module, run with `cd tui && go test ./...`. It checks only the
+current entry-path invariants:
 
-- the exact root frontmatter key sets and the strict YAML subset they use
-  (rejecting malformed shapes rather than approximating general YAML);
-- each root `related_files` entry repo-relative, `/`-separated, free of
-  `.`/`..` segments, present, symlink-resolved to a regular file inside the
-  repository, and duplicate-free;
-- non-empty root maintenance, kebab-case root `name`, and positive-integer
-  `contract_version`;
-- the root heading skeletons (Components second in the map-first Anatomy);
-- the reciprocal root Anatomy/Contract pair and the required
-  `dev-guide-skill/SKILL.md` / `README.md` / both-validator-file graph edges;
-- real Markdown entry-routing links from the three READMEs and `CLAUDE.md` to
-  both roots and the dev guide;
-- a **zero-child fail-closed sentinel**: the root `CONTRACT.md` must list no
-  non-root path ending `/CONTRACT.md`. Adding such an edge fails validation and
-  says that the first governed-child PR must add paired-child validation before
-  adding the root edge.
+- the root `ANATOMY.md` and `CONTRACT.md` list each other and the repository-local
+  `dev-guide-skill/SKILL.md`;
+- the three READMEs and `CLAUDE.md` contain Markdown links to both roots and the
+  dev guide.
 
-It lives in the TUI module because the root documents belong to neither binary
-yet the TUI module already owns repository/dev tooling; a third module is
-unnecessary. It checks document structure and the graph — not prose wording, and
-not the citation drift scan (owned by the `lingtai-tui-anatomy` skill).
-
-There is deliberately **no governed-child gate yet**. Zero governed children is
-valid at this convention-only stage; the every-child schema, child heading
-order, child/parent reciprocity, and canonical child-maintenance enforcement
-described elsewhere in this contract are the target the **first governed-child
-PR** must implement — using that child's actual graph parent — before it may add
-the child's `/CONTRACT.md` to the root `related_files`. Until then the sentinel
-rejects that edge, so the deferral cannot be crossed silently. Legacy Anatomy
-documents (`tui/ANATOMY.md`, `portal/ANATOMY.md`, `docs/ANATOMY.md`, and the
-per-package anatomies) migrate incrementally and are not forced onto the new
-template. Behavioral truth remains in each component's shared contract tests and
-code review.
+It deliberately does not implement a second YAML parser or enforce scalar
+styles, heading order, symlink/case variants, or hypothetical child-contract
+rules. Those concerns remain review- and skill-owned until a concrete governed
+child or recurring defect earns focused machinery. The test lives in the TUI
+module because the root documents belong to neither binary and a third module is
+unnecessary. Citation drift remains owned by the `lingtai-tui-anatomy` skill.
 
 ## Template
 

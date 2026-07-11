@@ -7,6 +7,7 @@ description: >
   capabilities, adapters, or developer documentation in this repository. Routes
   each task through the exact baseline, the distributed ANATOMY/CONTRACT
   systems, focused validation, and pull-request safety gates.
+last_changed_at: "2026-07-11T15:35:00-07:00"
 ---
 
 # LingTai TUI/Portal Development
@@ -116,8 +117,8 @@ embedded `python3` snippet documented in the `lingtai-tui-anatomy` skill
 citations before commit"). It walks every `ANATOMY.md` and reports missing or
 out-of-range `file:line` citation targets. Run it as documented there (paste the
 heredoc, or wrap it in a local scratch script); there is no packaged `--check`
-subcommand today. The architecture-document test validates document structure
-and the graph; the citation scan validates that citations still point at real
+subcommand today. The architecture-document smoke test validates the current
+root entry links; the citation scan validates that citations still point at real
 code.
 
 Also run package, import, build, adapter, or source-drift checks when the diff
