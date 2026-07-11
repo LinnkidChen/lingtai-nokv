@@ -3,7 +3,6 @@ related_files:
   - CONTRACT.md
   - dev-guide-skill/SKILL.md
   - tui/architecture_documents_test.go
-  - tui/architecture_documents_fixtures_test.go
   - tui/ANATOMY.md
   - portal/ANATOMY.md
   - docs/ANATOMY.md
@@ -72,7 +71,7 @@ The repo root holds two binary trees plus shared infrastructure. Each binary is 
 
 - **`ANATOMY.md` / `CONTRACT.md`** — the two normative distributed-system roots. This file is the code-navigation map and anatomy-of-anatomy; `CONTRACT.md` is the code-interface/Behavior definition root and contract-of-contract. They list each other in `related_files`.
 - **`dev-guide-skill/`** — the repository-local agent dev kit. Its `SKILL.md` routes agents into the Anatomy and Contract systems and the change/validation workflow, and may grow focused scripts, references, templates, or assets as real workflows recur. Distinct from the bundled `lingtai-dev-guide` skill under `tui/internal/preset/skills/`, which ships to agents and owns deeper per-topic procedures.
-- **`tui/architecture_documents_test.go` / `tui/architecture_documents_fixtures_test.go`** — the architecture-document validator in the existing TUI module (`cd tui && go test ./...`). The first file holds the strict-frontmatter parser and `validateRepository`, which checks the current root pair/graph/routing (exact root frontmatter, repo-contained related_files, the reciprocal root Anatomy/Contract pair, required routing edges, the root heading skeletons) and **asserts zero governed children** via a fail-closed sentinel; the second holds the data-driven fixtures that exercise those invariants. The repository has no governed children today, so there is no child gate: the first governed-child PR must add paired-child validation before adding its root `CONTRACT.md` edge. The root documents belong to neither binary; the test that guards them lives in the TUI module rather than a third module.
+- **`tui/architecture_documents_test.go`** — a small real-repository smoke test in the existing TUI module (`cd tui && go test ./...`). It checks only the root Anatomy/Contract/dev-guide routing and the links from the three READMEs and `CLAUDE.md`; schema, prose, hypothetical child graphs, and defensive YAML/path edge cases stay in review rather than a bespoke test framework. The root documents belong to neither binary, so the smoke test lives in the TUI module rather than a third module.
 - **`tui/`** — Terminal UI binary (`lingtai-tui`). Bubble Tea v2 + lipgloss v2. Single-binary launcher, agent monitor, first-run wizard, mail viewer, preset editor. Builds to `tui/bin/lingtai-tui`. The flat `tui/main.go` wires subcommands (`purge`, `list`, `clean`, `suspend`, `postman`, `bootstrap`, `presets`, `spawn`, `self-update`, `doctor`) and the interactive entry; everything substantive is under `tui/internal/`. See the per-package summary below.
 - **`portal/`** — Web portal binary (`lingtai-portal`). Go HTTP server with an embedded React frontend served from a single binary via `embed.FS`. Reads the same `.lingtai/` filesystem the TUI does, surfaces a network visualisation, mail/replay UI, and topology recorder. Builds to `portal/bin/lingtai-portal`. Per-package layout under `portal/internal/`.
 - **`install.sh`** — One-shot installer (`curl -fsSL https://lingtai.ai/install.sh | bash`), Homebrew-free. Defaults to the latest GitHub Release: downloads a prebuilt per-platform tarball (`lingtai-<tag>-<os>-<arch>.tar.gz`, produced by `.github/workflows/release.yml`) when the release exposes one, otherwise falls back to building the release source tarball with Go/npm — this fallback is what makes asset-less releases (e.g. current `v0.10.5`) installable. Installs into `--bin-dir`/`--prefix`, else a writable `/usr/local/bin`, else `~/.local/bin` (never prefers Homebrew). Then one-shot-creates/updates the Python runtime venv at `~/.lingtai-tui/runtime/venv`, installs/upgrades the `lingtai` package there, verifies `import lingtai`, stamps the env marker, and symlinks `lingtai-agent`. On WSL/Debian/Ubuntu it can `apt-get install` missing Go/Python/git when interactive with sudo; non-interactive mode prints the exact command instead. Stamps exact `vX.Y.Z` release installs as that tag and writes `install.json` (`install_method: "source"`, plus additive `install_kind: release-asset|source-build`) so the TUI source updater can re-run this script for newer tags. Auto-detects CN-restricted networks and falls back to mirrors for Go modules / `npm` / Go checksum DB. Helper functions are unit-tested via `scripts/test-install-sh.sh`.
@@ -205,12 +204,10 @@ governed system only when its co-located `CONTRACT.md` is linked from the root
 contract, and from that point the schema and link rules here apply.
 
 The governed-child frontmatter, body, and link/pairing rules below are the
-**normative target** for that first governed child, not machinery the validator
-runs today. The repository has zero governed children, so the validator ships no
-child gate; its zero-child sentinel instead **rejects** a root contract edge to a
-non-root `CONTRACT.md` until the first governed-child PR adds the paired-child
-validation these rules describe. Read the rest of this section as the design that
-PR must implement and enforce.
+**normative target** for that first governed child, not machinery the smoke test
+runs today. The repository has zero governed children, so there is no mechanical
+child gate. A first governed-child PR must justify and add only the focused
+validation its concrete graph needs; until then these rules remain review-owned.
 
 **Frontmatter.** A root-governed component anatomy has exactly two YAML keys, in
 order: `related_files` (a non-empty, duplicate-free list of repo-relative
@@ -256,10 +253,9 @@ Maintenance is part of reading:
   targets, not semantic misdescription.
 - Keep parent/child and Anatomy/Contract pair links reciprocal, and keep the
   two-binary facts compatible across `tui/ANATOMY.md` and `portal/ANATOMY.md`.
-  When this system's convention itself changes, update this root, its validator
-  (`tui/architecture_documents_test.go` and its fixtures in
-  `tui/architecture_documents_fixtures_test.go`), the repository-local dev guide,
-  and the README entries together. The bundled `lingtai-tui-anatomy` skill is a legacy
+  When this system's convention itself changes, update this root, its smoke test
+  (`tui/architecture_documents_test.go`), the repository-local dev guide, and the
+  README entries together. The bundled `lingtai-tui-anatomy` skill is a legacy
   citation-navigation aid that predates this convention; aligning it is separate,
   owner-gated work, not part of every change here.
 
