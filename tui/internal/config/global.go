@@ -100,11 +100,28 @@ type TUIConfig struct {
 // (auto_refresh_off=true) turns it off.
 func (tc TUIConfig) AutoRefreshEnabled() bool { return !tc.AutoRefreshOff }
 
+const DefaultMailPageSize = 200
+
+// AllowedMailPageSizes is the complete finite domain accepted by mail_page_size.
+// Keep the settings picker and constructor normalization on this single source.
+var AllowedMailPageSizes = [...]int{100, 200, 500, 1000, 2000}
+
+// NormalizeMailPageSize returns the configured finite page/content-window size,
+// or the default for legacy, hand-written, or otherwise unsupported values.
+func NormalizeMailPageSize(size int) int {
+	for _, allowed := range AllowedMailPageSizes {
+		if size == allowed {
+			return size
+		}
+	}
+	return DefaultMailPageSize
+}
+
 // DefaultTUIConfig returns sensible defaults.
 func DefaultTUIConfig() TUIConfig {
 	return TUIConfig{
 		Language:     "en",
-		MailPageSize: 200,
+		MailPageSize: DefaultMailPageSize,
 		Insights:     false,
 	}
 }
@@ -122,9 +139,7 @@ func LoadTUIConfig(globalDir string) TUIConfig {
 	if tc.Language == "" {
 		tc.Language = "en"
 	}
-	if tc.MailPageSize > 0 && tc.MailPageSize < 100 {
-		tc.MailPageSize = 200 // migrate old values below minimum
-	}
+	tc.MailPageSize = NormalizeMailPageSize(tc.MailPageSize)
 	// Insights defaults to false when absent from JSON.
 	// No override needed — zero value of bool is false.
 	return tc
@@ -132,6 +147,7 @@ func LoadTUIConfig(globalDir string) TUIConfig {
 
 // SaveTUIConfig writes ~/.lingtai-tui/tui_config.json.
 func SaveTUIConfig(globalDir string, tc TUIConfig) error {
+	tc.MailPageSize = NormalizeMailPageSize(tc.MailPageSize)
 	data, err := json.MarshalIndent(tc, "", "  ")
 	if err != nil {
 		return err
