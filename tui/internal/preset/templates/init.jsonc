@@ -56,6 +56,15 @@
     // -------------------------------------------------------
     // Capabilities — the agent's tool surface
     // -------------------------------------------------------
+    // Shape layers (kernel reader contract): new/canonical writes use
+    // `manifest.capabilities.shell`. For read-only compatibility, the reader
+    // accepts legacy `manifest.capabilities.bash` and maps it in memory to
+    // `manifest.capabilities.shell`; the kernel never writes `bash`.
+    // If both keys are present, differing values are a conflict (BLOCKED).
+    // Equal dual values are compatibility-only; effective memory keeps `shell`.
+    //
+    // The kernel reader owns this classification; these comments are informative
+    // shape guidance, not a migration registry or a runtime history file.
     // The kernel boots the `lingtai.core.*` floor by default on every
     // agent: knowledge, skills, shell, avatar, daemon, mcp, read, write,
     // edit, glob, grep — plus the always-on intrinsics psyche and email.

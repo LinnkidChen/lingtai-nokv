@@ -7,16 +7,15 @@ import (
 	"path/filepath"
 )
 
-// CurrentVersion is the latest migration version compiled into this binary.
+// CurrentVersion is the retained historical registry version. Production Portal
+// startup no longer consults or stamps this registry.
 // Version history:
 //
 //	37 — preset-skills-paths (TUI-only no-op)
 //	38 — agent-init-skills-paths (shared): from PR #340
 //	39 — agent-init-context-preset-repair (shared): from PR #357
 //	     (both PRs independently claimed v38; resolved in fix/migration-version-collision-20260620)
-//
-//	40 - shell-capability (shared): mirrors TUI m040 for per-agent init.json
-const CurrentVersion = 40
+const CurrentVersion = 39
 
 type metaFile struct {
 	Version int `json:"version"`
@@ -79,12 +78,11 @@ var migrations = []Migration{
 	{Version: 37, Name: "preset-skills-paths", Fn: func(_ string) error { return nil }},                   // TUI-only: patches saved preset skill path overrides
 	{Version: 38, Name: "agent-init-skills-paths", Fn: migrateAgentInitSkillsPaths},                       // shared: restores missing skills.paths in agent init.json (PR #340)
 	{Version: 39, Name: "agent-init-context-preset-repair", Fn: migrateAgentInitContextPresetRepair},      // shared: copies legacy root context_limit into llm + rewrites stale codex preset pointers (PR #357)
-	{Version: 40, Name: "shell-capability", Fn: migrateShellCapability},                                   // shared: canonicalizes legacy bash in agent init.json
 }
 
-// StampCurrent writes meta.json at CurrentVersion without running any
-// migrations. Mirror of the TUI helper — kept for parity so both binaries
-// know to skip migrations on fresh projects.
+// StampCurrent is the retained historical/test API. Production Portal startup
+// no longer calls it; project files remain un-stamped.
+
 func StampCurrent(lingtaiDir string) error {
 	metaPath := filepath.Join(lingtaiDir, "meta.json")
 	if _, err := os.Stat(metaPath); err == nil {
@@ -101,9 +99,9 @@ func StampCurrent(lingtaiDir string) error {
 	return os.Rename(tmpPath, metaPath)
 }
 
-// Run executes all pending migrations on the given .lingtai/ directory.
-// It reads the current version from meta.json (or assumes 0 if missing),
-// runs migrations sequentially, and writes the new version atomically.
+// Run is the retained historical/test API. Production Portal startup has no
+// caller and leaves existing project files untouched.
+
 func Run(lingtaiDir string) error {
 	metaPath := filepath.Join(lingtaiDir, "meta.json")
 
@@ -131,12 +129,6 @@ func Run(lingtaiDir string) error {
 
 	if current == CurrentVersion {
 		return nil // already up to date
-	}
-
-	// Check alias conflicts before any pending historical migration can rewrite
-	// init.json and round an arbitrary capability number.
-	if err := preflightShellCapabilityConflicts(lingtaiDir); err != nil {
-		return fmt.Errorf("shell capability preflight: %w", err)
 	}
 
 	for _, m := range migrations {

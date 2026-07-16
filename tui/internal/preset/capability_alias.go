@@ -15,11 +15,12 @@ const (
 	canonicalShellCapability = "shell"
 )
 
-// CanonicalizeCapabilities accepts the legacy bash capability on read and
-// moves its configuration object to the canonical shell key. The legacy value
-// is never merged with a different canonical value: a conflict is an error and
-// leaves the input untouched. When both values are identical, shell wins
-// deterministically and bash is removed.
+// CanonicalizeCapabilities is a bounded in-memory helper for explicit TUI
+// preset/editor/write flows; the kernel owns init compatibility semantics. It
+// accepts legacy bash and moves its configuration object to canonical shell.
+// The legacy value is never merged with a different canonical value: a conflict
+// is an error and leaves the input untouched. When both values are identical,
+// shell wins deterministically and bash is removed.
 func CanonicalizeCapabilities(caps map[string]interface{}) (bool, error) {
 	if caps == nil {
 		return false, nil
@@ -40,9 +41,9 @@ func CanonicalizeCapabilities(caps map[string]interface{}) (bool, error) {
 	return true, nil
 }
 
-// NormalizeLegacyCapabilities canonicalizes the capabilities object in a
-// preset before it is displayed or written. Non-object capability values are
-// left for Validate to report, matching the existing preset validation path.
+// NormalizeLegacyCapabilities applies the bounded helper to a preset before
+// explicit TUI output. Non-object capability values are left for Validate to
+// report, matching the existing preset validation path.
 func (p *Preset) NormalizeLegacyCapabilities() error {
 	if p == nil || p.Manifest == nil {
 		return nil

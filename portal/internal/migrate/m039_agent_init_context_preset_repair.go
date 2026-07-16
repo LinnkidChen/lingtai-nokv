@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -106,7 +107,7 @@ func migrateAgentInitContextPresetRepairOnly(lingtaiDir string) error {
 			continue
 		}
 		var init map[string]interface{}
-		if err := portalDecodeJSONUseNumber(data, &init); err != nil {
+		if err := json.Unmarshal(data, &init); err != nil {
 			fmt.Fprintf(os.Stderr, "m039: skipping %s — unparseable init.json: %v\n",
 				agentDir, err)
 			continue
