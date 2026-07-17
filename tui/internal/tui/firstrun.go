@@ -221,14 +221,12 @@ type FirstRunModel struct {
 	// soul-flow prompt/file path) and soulDelayInput (cadence after opt-in).
 	soulFlowEnabledIdx int
 	// Prompt path inputs
-	covenantInput  textinput.Model
-	principleInput textinput.Model
-	soulFlowInput  textinput.Model
-	commentInput   textinput.Model
+	covenantInput textinput.Model
+	soulFlowInput textinput.Model
+	commentInput  textinput.Model
 	// Track whether user manually edited prompt paths (dirty = don't auto-update on lang change)
-	covenantDirty  bool
-	principleDirty bool
-	soulFlowDirty  bool
+	covenantDirty bool
+	soulFlowDirty bool
 	// Welcome page language selector
 	langCursor            int
 	welcomeOnly           bool     // true when opened from /settings (return to mail after language pick)
@@ -537,11 +535,6 @@ func newFirstRunModelForPurpose(purpose firstRunPurpose, baseDir, globalDir stri
 	covi.SetWidth(50)
 	covi.Prompt = ""
 
-	prini := textinput.New()
-	prini.CharLimit = 256
-	prini.SetWidth(50)
-	prini.Prompt = ""
-
 	sfli := textinput.New()
 	sfli.CharLimit = 256
 	sfli.SetWidth(50)
@@ -608,7 +601,6 @@ func newFirstRunModelForPurpose(purpose firstRunPurpose, baseDir, globalDir stri
 		maxRpmInput:          mri,
 		maxAedInput:          mai,
 		covenantInput:        covi,
-		principleInput:       prini,
 		soulFlowInput:        sfli,
 		commentInput:         comi,
 		nirvanaIdx:           1, // default false (1=false)
@@ -818,7 +810,7 @@ func NewSetupModeModel(baseDir, globalDir, orchDir, orchName string) FirstRunMod
 	// inner shape — every consumer does p.Manifest["language"], ["llm"],
 	// ["capabilities"], etc. — so we extract the inner manifest dict.
 	// Stash the outer dict separately so enterAgentNameDir can read fields
-	// like covenant_file / principle_file that live at top level.
+	// like covenant_file that lives at top level.
 	if orchDir != "" {
 		initPath := filepath.Join(orchDir, "init.json")
 		if data, err := os.ReadFile(initPath); err == nil {
@@ -1056,7 +1048,6 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 		m.nameInput.SetWidth(inputWidth)
 		m.dirInput.SetWidth(inputWidth)
 		m.covenantInput.SetWidth(inputWidth)
-		m.principleInput.SetWidth(inputWidth)
 		m.soulFlowInput.SetWidth(inputWidth)
 		m.commentInput.SetWidth(inputWidth)
 		return m, nil
@@ -2456,7 +2447,6 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 						Karma:           m.karmaIdx == 0,
 						Nirvana:         m.nirvanaIdx == 0,
 						CovenantFile:    m.covenantInput.Value(),
-						PrincipleFile:   m.principleInput.Value(),
 						SoulFile:        m.soulFlowInput.Value(),
 						CommentFile:     m.commentInput.Value(),
 						AllowedPresets:  m.allowedPresetRefs(),
@@ -2508,7 +2498,6 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 					Karma:           m.karmaIdx == 0,
 					Nirvana:         m.nirvanaIdx == 0,
 					CovenantFile:    m.covenantInput.Value(),
-					PrincipleFile:   m.principleInput.Value(),
 					SoulFile:        m.soulFlowInput.Value(),
 					CommentFile:     m.commentInput.Value(),
 					AllowedPresets:  m.allowedPresetRefs(),
@@ -2583,12 +2572,9 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 					m.covenantInput, cmd = m.covenantInput.Update(msg)
 					m.covenantDirty = true
 				case 11:
-					m.principleInput, cmd = m.principleInput.Update(msg)
-					m.principleDirty = true
-				case 12:
 					m.soulFlowInput, cmd = m.soulFlowInput.Update(msg)
 					m.soulFlowDirty = true
-				case 13:
+				case 12:
 					m.commentInput, cmd = m.commentInput.Update(msg)
 				}
 				return m, cmd
@@ -2817,10 +2803,8 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 			case 10:
 				m.covenantInput, cmd = m.covenantInput.Update(msg)
 			case 11:
-				m.principleInput, cmd = m.principleInput.Update(msg)
-			case 12:
 				m.soulFlowInput, cmd = m.soulFlowInput.Update(msg)
-			case 13:
+			case 12:
 				m.commentInput, cmd = m.commentInput.Update(msg)
 			}
 		case stepRecipe:
@@ -3435,10 +3419,9 @@ func (m FirstRunModel) View() string {
 		// ── Prompts ──
 		b.WriteString("\n  " + sectionStyle.Render("── "+i18n.T("firstrun.section_prompts")+" ──") + "\n")
 		b.WriteString(cur(10) + i18n.T("firstrun.covenant") + ": " + m.covenantInput.View() + "\n")
-		b.WriteString(cur(11) + i18n.T("firstrun.principle") + ": " + m.principleInput.View() + "\n")
-		b.WriteString(cur(12) + i18n.T("firstrun.soul_flow") + ": " + m.soulFlowInput.View() + "\n")
+		b.WriteString(cur(11) + i18n.T("firstrun.soul_flow") + ": " + m.soulFlowInput.View() + "\n")
 		commentHint := StyleFaint.Render(" (" + i18n.T("firstrun.comment_hint") + ")")
-		b.WriteString(cur(13) + i18n.T("firstrun.comment") + ": " + m.commentInput.View() + commentHint + "\n")
+		b.WriteString(cur(12) + i18n.T("firstrun.comment") + ": " + m.commentInput.View() + commentHint + "\n")
 
 		if m.message != "" {
 			errStyle := lipgloss.NewStyle().Foreground(ColorSuspended)
@@ -3627,16 +3610,16 @@ func centerText(s string, width int) string {
 
 // agentNameDirFieldCount is the number of fields in stepAgentNameDir,
 // including the Back/Next button slots at the end.
-const agentNameDirFieldCount = 16
+const agentNameDirFieldCount = 15
 
 // Field indices:
 // 0=name, 1=dir, 2=lang,
 // 3=context_limit, 4=soul_delay, 5=max_rpm, 6=max_aed_attempts,
 // 7=karma, 8=nirvana, 9=soul_flow_enabled,
-// 10=covenant, 11=principle, 12=soul_flow (prompt path), 13=comment
-// 14=Back, 15=Next  (footer buttons; no input is focused here)
-const agentNameDirBackIdx = 14
-const agentNameDirNextIdx = 15
+// 10=covenant, 11=soul_flow (prompt path), 12=comment
+// 13=Back, 14=Next  (footer buttons; no input is focused here)
+const agentNameDirBackIdx = 13
+const agentNameDirNextIdx = 14
 
 // runCheckCaps runs `python -m lingtai check-caps` in a goroutine.
 func (m FirstRunModel) runCheckCaps() tea.Cmd {
@@ -4384,11 +4367,9 @@ func (m *FirstRunModel) enterAgentNameDir(p preset.Preset) {
 	langs := []string{"en", "zh", "wen"}
 	lang := langs[m.agentLangIdx]
 	m.covenantInput.SetValue(preset.CovenantPath(m.globalDir, lang))
-	m.principleInput.SetValue(preset.PrinciplePath(m.globalDir, lang))
 	m.soulFlowInput.SetValue(preset.SoulFlowPath(m.globalDir, lang))
 	m.commentInput.SetValue("")
 	m.covenantDirty = false
-	m.principleDirty = false
 	m.soulFlowDirty = false
 	m.karmaIdx = 0   // true
 	m.nirvanaIdx = 1 // false
@@ -4451,10 +4432,6 @@ func (m *FirstRunModel) enterAgentNameDir(p preset.Preset) {
 		if s, ok := m.setupKeepInitJSON["covenant_file"].(string); ok && s != "" {
 			m.covenantInput.SetValue(s)
 			m.covenantDirty = true
-		}
-		if s, ok := m.setupKeepInitJSON["principle_file"].(string); ok && s != "" {
-			m.principleInput.SetValue(s)
-			m.principleDirty = true
 		}
 		if s, ok := m.setupKeepInitJSON["soul_file"].(string); ok && s != "" {
 			m.soulFlowInput.SetValue(s)
@@ -4542,7 +4519,6 @@ func (m *FirstRunModel) focusAgentField() tea.Cmd {
 	m.maxRpmInput.Blur()
 	m.maxAedInput.Blur()
 	m.covenantInput.Blur()
-	m.principleInput.Blur()
 	m.soulFlowInput.Blur()
 	m.commentInput.Blur()
 
@@ -4566,10 +4542,8 @@ func (m *FirstRunModel) focusAgentField() tea.Cmd {
 	case 10:
 		return m.covenantInput.Focus()
 	case 11:
-		return m.principleInput.Focus()
-	case 12:
 		return m.soulFlowInput.Focus()
-	case 13:
+	case 12:
 		return m.commentInput.Focus()
 	}
 	return nil
@@ -4591,9 +4565,6 @@ func (m *FirstRunModel) updatePromptPaths() {
 	lang := langs[m.agentLangIdx]
 	if !m.covenantDirty {
 		m.covenantInput.SetValue(preset.CovenantPath(m.globalDir, lang))
-	}
-	if !m.principleDirty {
-		m.principleInput.SetValue(preset.PrinciplePath(m.globalDir, lang))
 	}
 	if !m.soulFlowDirty {
 		m.soulFlowInput.SetValue(preset.SoulFlowPath(m.globalDir, lang))
@@ -5166,11 +5137,8 @@ func (m FirstRunModel) performSetupSaveOnly() (FirstRunModel, tea.Cmd) {
 	p := m.currentPreset()
 	dirName := filepath.Base(m.setupOrchDir)
 
-	// Resolve prompt file paths from the project's staged .recipe/ so
-	// init.json stays consistent with whatever the user picked last. All
-	// four behavioral layers are optional — an empty return means "skip,
-	// kernel defaults take over" (for covenant/procedures) or "no file"
-	// (for comment/greet).
+	// Resolve supported prompt file paths from the project's staged .recipe/
+	// so init.json stays consistent with whatever the user picked last.
 	lang := m.pendingAgentOpts.Language
 	if lang == "" {
 		lang = "en"
@@ -5182,10 +5150,6 @@ func (m FirstRunModel) performSetupSaveOnly() (FirstRunModel, tea.Cmd) {
 	if covenantPath := resolveRecipeCovenant(projectRoot, lang); covenantPath != "" {
 		m.pendingAgentOpts.CovenantFile = covenantPath
 	}
-	if proceduresPath := resolveRecipeProcedures(projectRoot, lang); proceduresPath != "" {
-		m.pendingAgentOpts.ProceduresFile = proceduresPath
-	}
-
 	// /setup updates the default preset only — running agents keep their
 	// active preset until the next AED fallback or revert_preset call.
 	m.pendingAgentOpts.PreserveActivePreset = m.setupMode
@@ -5248,7 +5212,6 @@ func (m FirstRunModel) performRecipeSave(recipeName, customDir string) (FirstRun
 	// layers are optional in a recipe. Empty return = layer is absent:
 	//   - comment empty  → CommentFile stays unset (no comment file)
 	//   - covenant empty → CovenantFile stays unset (kernel default)
-	//   - procedures empty → ProceduresFile stays unset (kernel default)
 	//   - greet empty    → ApplyRecipe skips .prompt entirely
 	opts := m.pendingAgentOpts
 	if commentPath := resolveRecipeComment(projectRoot, lang); commentPath != "" {
@@ -5257,10 +5220,6 @@ func (m FirstRunModel) performRecipeSave(recipeName, customDir string) (FirstRun
 	if covenantPath := resolveRecipeCovenant(projectRoot, lang); covenantPath != "" {
 		opts.CovenantFile = covenantPath
 	}
-	if proceduresPath := resolveRecipeProcedures(projectRoot, lang); proceduresPath != "" {
-		opts.ProceduresFile = proceduresPath
-	}
-
 	// /setup: update default preset only, leave the running agent's active alone.
 	opts.PreserveActivePreset = m.setupMode
 
