@@ -683,6 +683,36 @@ func (m *FirstRunModel) discoverRecipes() {
 		m.categoryBoundaries = append(m.categoryBoundaries, len(m.discoveredRecipes))
 		m.discoveredRecipes = append(m.discoveredRecipes, preset.ScanCategory(m.globalDir, cat, lang)...)
 	}
+	if !m.draftMode || len(m.discoveredRecipes) != 0 {
+		return
+	}
+
+	// Draft discovery cannot run Bootstrap before confirmation. When no
+	// disk-backed bundled recipe exists, expose the same compiled recipe set in
+	// memory; Dir stays empty so preview/apply callers cannot mistake it for a
+	// real global path. Imported/project-local and Agora choices remain owned by
+	// their existing slots, so an embedded ID already represented there is not
+	// duplicated.
+	seen := make(map[string]bool)
+	if m.importedRecipe != nil && m.importedRecipe.ID != "" {
+		seen[m.importedRecipe.ID] = true
+	}
+	for _, recipe := range m.agoraRecipes {
+		if recipe.Info.ID != "" {
+			seen[recipe.Info.ID] = true
+		}
+	}
+	m.categoryBoundaries = m.categoryBoundaries[:0]
+	for _, cat := range preset.RecipeCategories {
+		m.categoryBoundaries = append(m.categoryBoundaries, len(m.discoveredRecipes))
+		for _, recipe := range preset.ScanEmbeddedCategory(cat, lang) {
+			if seen[recipe.ID] {
+				continue
+			}
+			seen[recipe.ID] = true
+			m.discoveredRecipes = append(m.discoveredRecipes, recipe)
+		}
+	}
 }
 
 // NewDraftFirstRunModel creates a FirstRunModel for the no-project
@@ -2643,11 +2673,16 @@ func (m FirstRunModel) Update(msg tea.Msg) (FirstRunModel, tea.Cmd) {
 				if m.recipeIdx == -1 || m.recipeIdx == recipeBackIdx {
 					return m, nil
 				}
+				recipeName := m.recipeIdxToName(m.recipeIdx)
 				recipeDir := m.resolveCurrentRecipeDir()
-				if recipeDir == "" {
-					return m, nil
+				var entries []MarkdownEntry
+				if m.recipeIdxIsEmbedded(m.recipeIdx) {
+					// Embedded fallback recipes have no truthful disk path;
+					// render their files as in-memory MarkdownEntry content.
+					entries = buildEmbeddedRecipeEntries(recipeName, m.currentAgentLanguage())
+				} else if recipeDir != "" {
+					entries = buildRecipeEntries(recipeDir, m.currentAgentLanguage())
 				}
-				entries := buildRecipeEntries(recipeDir, m.currentAgentLanguage())
 				if len(entries) == 0 {
 					return m, nil
 				}
@@ -4760,6 +4795,19 @@ func (m FirstRunModel) recipeIdxToName(idx int) string {
 	}
 }
 
+func (m FirstRunModel) recipeIdxIsEmbedded(idx int) bool {
+	if idx < 0 {
+		return false
+	}
+	if m.hasImportedRecipe() {
+		if idx == 0 {
+			return false
+		}
+		idx--
+	}
+	return idx >= 0 && idx < len(m.discoveredRecipes) && m.discoveredRecipes[idx].Embedded
+}
+
 // agoraRecipeAt returns the AgoraRecipe for the given picker index, or nil.
 func (m FirstRunModel) agoraRecipeAt(idx int) *preset.AgoraRecipe {
 	offset := 0
@@ -5284,6 +5332,7 @@ func (m FirstRunModel) enterReviewStep(recipeName, customDir string) (FirstRunMo
 	if m.draft != nil {
 		m.draft.RecipeName = recipeName
 		m.draft.RecipeCustomDir = customDir
+		m.draft.RecipeEmbedded = m.recipeIdxIsEmbedded(m.recipeIdx)
 		m.draft.AgentName = m.agentName
 		m.draft.AgentDirName = m.pendingDirName
 		m.draft.AgentOpts = m.pendingAgentOpts
