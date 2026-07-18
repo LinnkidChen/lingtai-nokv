@@ -10,7 +10,6 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.6
 	github.com/google/uuid v1.6.0
-	github.com/klauspost/compress v1.18.5
 	golang.design/x/clipboard v0.8.0
 	golang.org/x/term v0.36.0
 )

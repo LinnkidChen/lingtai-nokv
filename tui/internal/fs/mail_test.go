@@ -2,9 +2,12 @@ package fs
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -109,54 +112,61 @@ func TestWriteMail_LocalDelivery(t *testing.T) {
 	}
 }
 
-func TestWriteMail_RemoteRoutesToOutbox(t *testing.T) {
+func TestWriteMail_RemoteIsUnsupportedWithoutMailboxWrites(t *testing.T) {
+	recipientDir := t.TempDir()
 	senderDir := t.TempDir()
-	os.MkdirAll(filepath.Join(senderDir, "mailbox", "sent"), 0o755)
-	os.MkdirAll(filepath.Join(senderDir, "mailbox", "outbox"), 0o755)
-	writeSenderManifest(t, senderDir, map[string]interface{}{"karma": true})
-
 	remoteAddr := "[2001:db8::1]:/home/user/.lingtai/agent_b"
-	err := WriteMail("", senderDir, "human", remoteAddr, "hello", "across the internet")
-	if err != nil {
-		t.Fatalf("WriteMail: %v", err)
+
+	for _, path := range []string{
+		filepath.Join(senderDir, "mailbox", "outbox", "historical", "message.json"),
+		filepath.Join(senderDir, "mailbox", "sent", "historical", "message.json"),
+		filepath.Join(recipientDir, "mailbox", "inbox", "historical", "message.json"),
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("historical sentinel\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := snapshotMailTree(t, senderDir, recipientDir)
+
+	err := WriteMail(recipientDir, senderDir, "human", remoteAddr, "hello", "across the internet")
+	if !errors.Is(err, ErrRemoteMailUnsupported) {
+		t.Fatalf("WriteMail error = %v, want ErrRemoteMailUnsupported", err)
 	}
 
-	outboxDir := filepath.Join(senderDir, "mailbox", "outbox")
-	entries, err := os.ReadDir(outboxDir)
-	if err != nil {
-		t.Fatalf("read outbox: %v", err)
+	after := snapshotMailTree(t, senderDir, recipientDir)
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("remote send changed existing mailbox tree:\nbefore=%v\nafter=%v", before, after)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("outbox len = %d, want 1", len(entries))
-	}
+}
 
-	msgPath := filepath.Join(outboxDir, entries[0].Name(), "message.json")
-	data, err := os.ReadFile(msgPath)
-	if err != nil {
-		t.Fatalf("read outbox message: %v", err)
+func snapshotMailTree(t *testing.T, roots ...string) map[string][]byte {
+	t.Helper()
+	snapshot := make(map[string][]byte)
+	for _, root := range roots {
+		if err := filepath.WalkDir(root, func(path string, entry iofs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			key := path
+			if entry.IsDir() {
+				key += "/"
+				snapshot[key] = nil
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			snapshot[key] = data
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	var msg MailMessage
-	if err := json.Unmarshal(data, &msg); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if msg.Message != "across the internet" {
-		t.Errorf("message = %q, want %q", msg.Message, "across the internet")
-	}
-	toSlice, ok := msg.To.([]interface{})
-	if !ok {
-		t.Fatalf("to type = %T, want []interface{}", msg.To)
-	}
-	if len(toSlice) != 1 || toSlice[0] != remoteAddr {
-		t.Errorf("to = %v, want [%q]", toSlice, remoteAddr)
-	}
-
-	sent, err := ReadSent(senderDir)
-	if err != nil {
-		t.Fatalf("read sent: %v", err)
-	}
-	if len(sent) != 1 {
-		t.Fatalf("sent len = %d, want 1", len(sent))
-	}
+	return snapshot
 }
 
 func TestReadInbox_Empty(t *testing.T) {

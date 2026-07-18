@@ -33,7 +33,7 @@ maintenance: |
 
 ## What this is
 
-The portal's read-focused window into a `.lingtai/` project directory. Same shape as `tui/internal/fs/` — agent manifests, heartbeats, mail, token ledgers, contacts, network discovery — but tailored to the portal's needs: it builds full `Network` payloads for the API, holds a `MailCache` for incremental mailbox polling, and — the single biggest difference from the TUI — reconstructs the **network topology tape** from historical `events.jsonl` and mailbox data for the replay timeline. The TUI doesn't do tape reconstruction; the portal exists to provide it.
+The portal's read-focused window into a `.lingtai/` project directory. Same shape as `tui/internal/fs/` — agent manifests, heartbeats, mail, token ledgers, contacts, network discovery — but tailored to the portal's needs: it builds full `Network` payloads for the API and — the single biggest difference from the TUI — reconstructs the **network topology tape** from historical `events.jsonl` and mailbox data for the replay timeline. The TUI doesn't do tape reconstruction; the portal exists to provide it. Mailbox readers retain the shared record schema and mailbox-id shape without owning a write/cache layer.
 
 ## Components
 
@@ -61,13 +61,8 @@ The portal's read-focused window into a `.lingtai/` project directory. Same shap
 - `IsAliveHuman()` (`portal/internal/fs/heartbeat.go:24-26`) — always true.
 
 ### Mail (`mail.go`)
-- `newMailboxID()` (`portal/internal/fs/mail.go:32`) — builds `YYYYMMDDTHHMMSS-xxxx` short id matching the kernel's `_new_mailbox_id`.
-- `ReadInbox(dir)`, `ReadArchive(dir)` (`portal/internal/fs/mail.go:36-40`) — full-folder reads.
-- `MailCache` struct + `NewMailCache(humanDir)` (`portal/internal/fs/mail.go:46-55`) — incremental mailbox cache tracking inbox+seen mailbox-id directories.
-- `MailCache.Refresh()` (`portal/internal/fs/mail.go:66-91`) — immutable refresh: scans for new messages, merges, sorts by `ReceivedAt`. Safe for goroutine use.
-- `prepareMailDirs(primaryParent, sentParent)` (`portal/internal/fs/mail.go:176`) — allocates a short id and creates every mailbox leaf the send will write, retrying on collisions in any target folder.
-- `WriteMail(recipientDir, senderDir, ...)` (`portal/internal/fs/mail.go:214`) — writes message to inbox (local) or outbox (pseudo-agent/remote), plus sent copy. Allocates id via `prepareMailDirs`. Respects the pseudo-agent contract: if sender has `admin: null`, writes to outbox only.
-- `isPseudoAgent(identity)` (`portal/internal/fs/mail.go:279`) — `admin` nil or absent → true.
+- `newMailboxID()` (`portal/internal/fs/mail.go:24`) — preserves the shared `YYYYMMDDTHHMMSS-xxxx` mailbox-id shape.
+- `ReadInbox(dir)`, `ReadArchive(dir)` (`portal/internal/fs/mail.go:28-34`) — read mailbox records without creating or caching mail state.
 
 ### Ledger (`ledger.go`)
 - `ReadLedger(dir)` (`portal/internal/fs/ledger.go:17-47`) — scans `delegates/ledger.jsonl` for `event: "avatar"` records, returns `AvatarEdge` pairs and resolved child directories.
@@ -105,10 +100,10 @@ The portal's read-focused window into a `.lingtai/` project directory. Same shap
 
 ## Connections
 
-- **Called by** `portal/internal/api/` (handlers build `Network` payloads; replay calls `ReconstructTape`; mail composer calls `WriteMail`).
+- **Called by** `portal/internal/api/` (handlers build `Network` payloads and replay calls `ReconstructTape`).
 - **Reads** `.lingtai/<agent>/.agent.json`, `.agent.heartbeat`, `.status.json`, `system/manifest.resolved.json` (preferred over `init.json` when present), `init.json`, `logs/events.jsonl`, `logs/token_ledger.jsonl`, `delegates/ledger.jsonl`, `mailbox/contacts.json`, `mailbox/inbox/*/message.json`, `mailbox/archive/*/message.json`, `mailbox/sent/*/message.json`.
-- **Writes** signal files (`.sleep`, `.suspend`, `.interrupt`, `.prompt`) and atomically updates human location in `.agent.json`. Writes outbound mail to inbox/outbox/sent directories.
-- **Cross-reference** `tui/internal/fs/` shares the same read pattern for agent manifests, heartbeats, mail, and ledgers. The portal adds `reconstruct.go` (tape reconstruction — the TUI doesn't do this), `MailCache` for incremental polling (the TUI reads all mail fresh each time), and `WriteMail` for the portal's mail composer. Address resolution and signal writing are identical across both binaries.
+- **Writes** signal files (`.sleep`, `.suspend`, `.interrupt`, `.prompt`) and atomically updates human location in `.agent.json`; this package has no mail writer.
+- **Cross-reference** `tui/internal/fs/` shares the same read pattern for agent manifests, heartbeats, mail, and ledgers. The portal adds `reconstruct.go` (tape reconstruction — the TUI doesn't do this); address resolution and signal writing remain parallel across both binaries.
 
 ## Composition
 
@@ -123,8 +118,7 @@ All state is read from the project's `.lingtai/` directory. The portal only writ
 ## Notes
 
 - **`reconstruct.go` is the portal-specific addition.** The TUI shows live topology; the portal reconstructs historical topology tapes from `events.jsonl` + mailbox data. The reconstruction replays agent states chronologically using activity-driven sampling on a 3s grid (a frame per `agent_state` event, per mail message, per agent's first-seen time, plus one heartbeat per 60s during quiet stretches) — not a dense uniform grid, so reconstruction stays O(events) rather than O(duration/3s). Agents appear when their first event fires and mail accumulates cumulatively. This is the data source for the `/replay` endpoint.
-- **Mailbox id shape.** `WriteMail` allocates short, human-scannable ids of the form `YYYYMMDDTHHMMSS-xxxx` (20 chars, UTC, 4 hex chars of UUID4 entropy) via `newMailboxID`. This matches the kernel's `_new_mailbox_id` in `lingtai-kernel/src/lingtai/kernel/intrinsics/email/primitives.py` and the TUI's mirror in `tui/internal/fs/mail.go`, so directory names, `id`, and `_mailbox_id` look identical regardless of which side wrote the message. `prepareMailDirs` uses `os.Mkdir` (not `MkdirAll`) on each leaf so same-second collisions in any target folder surface as `fs.ErrExist` and trigger up to 8 regenerations without overwriting existing mail.
-- **`MailCache`** tracks already-loaded messages via mailbox-id directory names, enabling incremental refreshes without re-reading the entire mailbox. It is immutable by convention — `Refresh()` returns a new cache rather than mutating the receiver, so it's safe to call from a goroutine.
+- **Mailbox id shape.** `newMailboxID` preserves the short `YYYYMMDDTHHMMSS-xxxx` (20 chars, UTC, 4 hex chars of UUID4 entropy) compatibility shape shared with the kernel and TUI (`tui/internal/fs/mail.go`). The portal reads existing directory names and message `id`/`_mailbox_id` records without rewriting them.
 - **`IsAlive`** uses a 2-second threshold. A stale heartbeat forces state to `SUSPENDED` in `BuildNetwork`.
 - **Atomic writes** (location, signals) use temp-file + rename, matching the kernel's filesystem contract.
 - **Capability parsing** handles both `[]string` (from TUI-generated presets) and tuple format (from live agents), so the portal works with projects the TUI hasn't touched.

@@ -232,7 +232,7 @@ func TestNoProjectGate_SubcommandsNeverCallLauncher(t *testing.T) {
 	}
 	text := string(src)
 
-	subcommandFns := regexp.MustCompile(`func (purgeMain|listMain|cleanMain|suspendMain|postmanMain|bootstrapMain|presetsMain|spawnMain|selfUpdateMain|doctorMain)\(\)`).FindAllStringSubmatch(text, -1)
+	subcommandFns := regexp.MustCompile(`func (purgeMain|listMain|cleanMain|suspendMain|bootstrapMain|presetsMain|spawnMain|selfUpdateMain|doctorMain)\(\)`).FindAllStringSubmatch(text, -1)
 	if len(subcommandFns) == 0 {
 		t.Fatal("no subcommand *Main functions found — has main.go been restructured?")
 	}

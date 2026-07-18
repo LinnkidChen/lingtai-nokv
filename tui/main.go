@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +20,6 @@ import (
 	"github.com/anthropics/lingtai-tui/internal/fs"
 	"github.com/anthropics/lingtai-tui/internal/globalmigrate"
 	"github.com/anthropics/lingtai-tui/internal/headless"
-	"github.com/anthropics/lingtai-tui/internal/postman"
 	"github.com/anthropics/lingtai-tui/internal/preset"
 	"github.com/anthropics/lingtai-tui/internal/process"
 	"github.com/anthropics/lingtai-tui/internal/tui"
@@ -58,10 +56,6 @@ func main() {
 		}
 		if arg == "suspend" {
 			suspendMain()
-			return
-		}
-		if arg == "postman" {
-			postmanMain()
 			return
 		}
 		if arg == "bootstrap" {
@@ -630,7 +624,6 @@ func printHelp() {
 	fmt.Println("       lingtai-tui list [--detailed|-d] [--admin] [dir]")
 	fmt.Println("       lingtai-tui suspend [dir]")
 	fmt.Println("       lingtai-tui clean [--force]")
-	fmt.Println("       lingtai-tui postman [--port N] [dir ...]")
 	fmt.Println("       lingtai-tui bootstrap")
 	fmt.Println("       lingtai-tui presets [--saved-only] [--templates-only]")
 	fmt.Println("       lingtai-tui spawn <dir> --preset <name> [--agent-name <name>] [--language <code>]")
@@ -646,7 +639,6 @@ func printHelp() {
 	fmt.Println("  suspend      Gracefully suspend agents via signal files (all, or those in <dir>)")
 	fmt.Println("  clean        Suspend agents in current directory, then remove .lingtai/.")
 	fmt.Println("               Refuses to delete while agents are still alive; --force overrides.")
-	fmt.Println("  postman      Start the mail relay daemon (UDP, port 7777 by default)")
 	fmt.Println("  bootstrap       Re-extract embedded skills to ~/.lingtai-tui/utilities/")
 	fmt.Println("  presets      List available presets as JSON (for agent consumption)")
 	fmt.Println("  spawn        Create a new project and launch an agent headlessly (JSON output)")
@@ -962,56 +954,6 @@ func cleanProject(lingtaiDir string, force bool, waitTimeout time.Duration) erro
 		return fmt.Errorf("Failed to remove %s: %v", lingtaiDir, err)
 	}
 	return nil
-}
-
-func postmanMain() {
-	globalDir, err := config.GlobalDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	port := postman.DefaultPort
-
-	// Parse optional --port flag
-	for i := 2; i < len(os.Args)-1; i++ {
-		if os.Args[i] == "--port" {
-			p, err := strconv.Atoi(os.Args[i+1])
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "invalid port: %s\n", os.Args[i+1])
-				os.Exit(1)
-			}
-			port = p
-		}
-	}
-
-	// Collect watch directories from remaining args
-	var watchDirs []string
-	for i := 2; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		if arg == "--port" {
-			i++ // skip port value
-			continue
-		}
-		abs, _ := filepath.Abs(arg)
-		watchDirs = append(watchDirs, abs)
-	}
-
-	// Default: watch current project's .lingtai/
-	if len(watchDirs) == 0 {
-		cwd, _ := os.Getwd()
-		lingtaiDir := filepath.Join(cwd, ".lingtai")
-		if _, err := os.Stat(lingtaiDir); err == nil {
-			watchDirs = append(watchDirs, lingtaiDir)
-		}
-	}
-
-	if len(watchDirs) == 0 {
-		fmt.Fprintf(os.Stderr, "postman: no .lingtai/ directories to watch\nUsage: lingtai-tui postman [--port N] [dir ...]\n")
-		os.Exit(1)
-	}
-
-	postman.Run(globalDir, port, watchDirs)
 }
 
 func bootstrapMain() {

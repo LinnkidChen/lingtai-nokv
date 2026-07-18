@@ -34,6 +34,11 @@ func newMailboxID() string {
 	return mailboxIDSource()
 }
 
+// ErrRemoteMailUnsupported reports that TUI mail cannot deliver to a remote address.
+// Remote delivery is unavailable; rejecting it before any mailbox allocation
+// keeps unsupported sends side-effect free.
+var ErrRemoteMailUnsupported = errors.New("unsupported remote mail address")
+
 // mailboxIDCollisionRetries is the per-folder attempt budget for
 // `prepareMailDirs`. The short ID has 16 bits of entropy in the
 // suffix, so a same-second send has a 1/65536 chance of colliding;
@@ -247,6 +252,10 @@ func writeJSONAtomic(path string, data []byte) error {
 }
 
 func WriteMail(recipientDir, senderDir, fromAddr, toAddr, subject, body string) error {
+	if IsRemoteAddress(toAddr) {
+		return ErrRemoteMailUnsupported
+	}
+
 	// Read sender's manifest as identity card (same as Python agents do)
 	identity := readManifestAsIdentity(senderDir)
 
@@ -256,7 +265,7 @@ func WriteMail(recipientDir, senderDir, fromAddr, toAddr, subject, body string) 
 	var primaryParent string
 	pseudo := isPseudoAgent(identity)
 	switch {
-	case pseudo, IsRemoteAddress(toAddr):
+	case pseudo:
 		primaryParent = filepath.Join(senderDir, "mailbox", "outbox")
 	default:
 		primaryParent = filepath.Join(recipientDir, "mailbox", "inbox")
