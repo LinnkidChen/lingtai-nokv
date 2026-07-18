@@ -86,12 +86,12 @@ The TUI's filesystem window into an agent working directory (`<project>/.lingtai
 | `IsAliveHuman()` | `tui/internal/fs/heartbeat.go:24` | always `true` |
 | **mail.go** | | |
 | `newMailboxID()` | `tui/internal/fs/mail.go:33` | builds `YYYYMMDDTHHMMSS-xxxx` short id matching the kernel's `_new_mailbox_id` |
-| `prepareMailDirs` | `tui/internal/fs/mail.go:50` | allocates a short id and creates every mailbox leaf the send will write, retrying on collisions in any target folder |
-| `ReadInbox(dir)` | `tui/internal/fs/mail.go:88` | reads `mailbox/inbox/` → `[]MailMessage` |
-| `ReadSent(dir)` | `tui/internal/fs/mail.go:92` | reads `mailbox/sent/` → `[]MailMessage` |
-| `MailCache` | `tui/internal/fs/mail.go:99` | incremental refresh cache: outbox + inbox + sent merged |
-| `NewMailCache(humanDir)` | `tui/internal/fs/mail.go:109` | creates cache; `Refresh()` returns updated copy (receiver not mutated) |
-| `WriteMail` | `tui/internal/fs/mail.go:237` | writes to recipient inbox + sender sent (or human outbox for pseudo-agent); allocates id via `prepareMailDirs` |
+| `prepareMailDirs` | `tui/internal/fs/mail.go:55` | allocates a short id and creates every mailbox leaf the send will write, retrying on collisions in any target folder |
+| `ReadInbox(dir)` | `tui/internal/fs/mail.go:93` | reads `mailbox/inbox/` → `[]MailMessage` |
+| `ReadSent(dir)` | `tui/internal/fs/mail.go:97` | reads `mailbox/sent/` → `[]MailMessage` |
+| `MailCache` | `tui/internal/fs/mail.go:104` | incremental refresh cache: outbox + inbox + sent merged |
+| `NewMailCache(humanDir)` | `tui/internal/fs/mail.go:114` | creates cache; `Refresh()` returns updated copy (receiver not mutated) |
+| `WriteMail` | `tui/internal/fs/mail.go:254-316` | writes local mail to recipient inbox + sender sent (or human outbox for pseudo-agent); returns `ErrRemoteMailUnsupported` before mailbox allocation for remote addresses |
 | **ledger.go** | | |
 | `ReadLedger(dir)` | `tui/internal/fs/ledger.go:17` | reads `delegates/ledger.jsonl` → `[]AvatarEdge` + child dirs |
 | **location.go** | | |
@@ -138,7 +138,7 @@ The TUI's filesystem window into an agent working directory (`<project>/.lingtai
 - **Called by `tui/internal/inventory/`** — running-agent inventory enriches process rows with `.agent.json`, heartbeat, status PID, lock, admin, IM identity, and orchestrator-role metadata.
 - **Reads from agent working directories** — `.agent.json`, `.agent.heartbeat`, `.status.json`, `mailbox/*/`, `logs/log.sqlite` (molt/session-boundary and diagnostic indexes, never canonical session replay authority), `logs/token_ledger.jsonl` (main rows only for agent totals/detail), `logs/events.jsonl`, `logs/soul_inquiry.jsonl`, `logs/soul_flow.jsonl`, `delegates/ledger.jsonl`, `mailbox/contacts.json`, `daemons/*/daemon.json`, `daemons/*/logs/token_ledger.jsonl`.
 - **Writes signal files** (the only agent-owned files the TUI writes): `.sleep`, `.suspend`, `.interrupt`, `.prompt`, `.inquiry`, `.refresh`/`.refresh.taken`.
-- **Writes human-owned/derived state** — `WriteMail` writes `human/mailbox/outbox/<mailbox-id>/`; only complete accepted `SessionCache` persistence/appends write `human/logs/session.jsonl` (`tui/internal/fs/session.go:300-361`).
+- **Writes human-owned/derived state** — local `WriteMail` writes recipient inbox + sender sent, or `human/mailbox/outbox/<mailbox-id>/` for pseudo-agent sends; remote addresses fail before any mailbox write. Only complete accepted `SessionCache` persistence/appends write `human/logs/session.jsonl` (`tui/internal/fs/session.go:300-361`).
 - **Calls `ipinfo.io`** — `ResolveLocation` makes an HTTP call; `UpdateHumanLocation` caches result in human's `.agent.json`.
 
 ## Composition

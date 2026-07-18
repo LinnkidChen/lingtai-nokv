@@ -1151,7 +1151,9 @@ func (m MailModel) Update(msg tea.Msg) (MailModel, tea.Cmd) {
 
 	case SendMsg:
 		var text string
+		fromPending := false
 		if m.pendingMessage != "" {
+			fromPending = true
 			text = m.pendingMessage
 			m.pendingMessage = ""
 		} else {
@@ -1173,7 +1175,14 @@ func (m MailModel) Update(msg tea.Msg) (MailModel, tea.Cmd) {
 			return m, func() tea.Msg { return PaletteSelectMsg{Command: cmd, Args: args} }
 		}
 		if m.orchestrator != "" {
-			fs.WriteMail(m.orchestrator, m.humanDir, m.humanAddr, m.orchAddr, "", text)
+			if err := fs.WriteMail(m.orchestrator, m.humanDir, m.humanAddr, m.orchAddr, "", text); err != nil {
+				if fromPending {
+					m.pendingMessage = text
+				}
+				m.input.SetValue(text)
+				m.AddSystemMessage(i18n.TF("mail.send_failed", err))
+				return m, nil
+			}
 			// Human sent a real message — allow new insight after next idle
 			os.Remove(filepath.Join(m.baseDir, ".tui-asset", ".insight.done"))
 			m.input.Reset()

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Postman retirement — PR explainer</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#141b2f;--panel2:#0f1629;--text:#edf3ff;--muted:#9eb0cf;--line:#2b3858;--cyan:#63d5ff;--green:#73e6a2;--amber:#ffd27a;--red:#ff8f9d;--violet:#b7a3ff}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top right,#18264a 0,transparent 38%),var(--bg);color:var(--text);font:15px/1.62 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1100px;margin:auto;padding:48px 24px 72px}header{padding:34px;border:1px solid var(--line);border-radius:22px;background:linear-gradient(135deg,rgba(99,213,255,.12),rgba(183,163,255,.08));box-shadow:0 24px 80px rgba(0,0,0,.25)}h1{font-size:clamp(34px,6vw,62px);line-height:1.02;margin:10px 0 18px;letter-spacing:-.035em}h2{margin:0 0 16px;font-size:25px}h3{margin:22px 0 8px;font-size:17px;color:var(--cyan)}p{margin:8px 0 14px}.eyebrow{font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);font-size:12px}.lede{max-width:820px;font-size:19px;color:#cad8f2}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:18px;margin-top:20px}.card{grid-column:span 6;border:1px solid var(--line);background:linear-gradient(180deg,var(--panel),var(--panel2));border-radius:18px;padding:24px}.wide{grid-column:1/-1}.third{grid-column:span 4}.metric{font-size:30px;font-weight:850;color:var(--green)}.label{color:var(--muted);font-size:13px}.pill{display:inline-block;padding:5px 10px;margin:2px 5px 2px 0;border:1px solid #3c4c70;border-radius:999px;color:#dbe8ff;background:#101a32;font-size:12px}.ok{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;vertical-align:top;padding:12px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8f0ff;background:#0c1529;border:1px solid #283756;border-radius:6px;padding:1px 5px}pre{overflow:auto;padding:16px;border-radius:12px;background:#080d19;border:1px solid var(--line);color:#dce8ff}ul{margin:8px 0 0;padding-left:22px}li{margin:6px 0}.flow{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin-top:14px}.node{border:1px solid var(--line);border-radius:14px;padding:16px;background:#0d1527}.arrow{font-size:24px;color:var(--cyan)}.note{border-left:4px solid var(--amber);padding:12px 16px;background:rgba(255,210,122,.08);border-radius:0 10px 10px 0}.sources a{color:var(--cyan);text-decoration:none}.sources li{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}@media(max-width:760px){.card,.third{grid-column:1/-1}.flow{grid-template-columns:1fr}.arrow{transform:rotate(90deg);text-align:center}.wrap{padding:24px 14px 48px}}
+</style>
+</head>
+<body><main class="wrap">
+<header>
+  <div class="eyebrow">PR explainer · 2026-07-18</div>
+  <h1>Retire the dormant UDP Postman path</h1>
+  <p class="lede">The Go TUI no longer advertises or runs the cross-machine Postman relay. Remote recipients fail explicitly before any mailbox mutation; local and pseudo-agent filesystem mail remain unchanged.</p>
+  <span class="pill">Base 90506b55</span><span class="pill">TUI + Portal</span><span class="pill">No user-data migration</span><span class="pill">No kernel transport removed</span>
+</header>
+
+<section class="grid">
+  <article class="card third"><div class="metric">8</div><div class="label">tracked Postman source/test files removed</div></article>
+  <article class="card third"><div class="metric">0</div><div class="label">user outbox/history files touched</div></article>
+  <article class="card third"><div class="metric">3</div><div class="label">locale catalogs kept in lockstep</div></article>
+
+  <article class="card wide">
+    <h2>Decision in one screen</h2>
+    <div class="flow">
+      <div class="node"><strong>Before</strong><br>Remote address → write sender outbox → optional Postman UDP/LTPM relay → queue removal without remote acknowledgement.</div>
+      <div class="arrow">→</div>
+      <div class="node"><strong>After</strong><br>Remote address → <span class="bad">explicit unsupported error</span> before ID allocation or mailbox writes. Local and pseudo-agent paths continue normally.</div>
+    </div>
+    <p class="note"><strong>Why:</strong> Postman was the only in-tree consumer of remote outboxes, had no remote acknowledgement contract, and its CLI/package were otherwise isolated. Removing only the daemon would have stranded newly created queues, so producer behavior changes in the same PR.</p>
+  </article>
+
+  <article class="card wide">
+    <h2>Behavior contract</h2>
+    <table>
+      <thead><tr><th>Case</th><th>New behavior</th><th>Invariant</th></tr></thead>
+      <tbody>
+        <tr><td>Local agent</td><td>Recipient inbox + sender sent are written.</td><td class="ok">Preserved</td></tr>
+        <tr><td>Pseudo-agent</td><td>Human outbox behavior remains available for local filesystem delivery.</td><td class="ok">Preserved</td></tr>
+        <tr><td>Remote address</td><td><code>ErrRemoteMailUnsupported</code> is returned before manifest reads, ID allocation, directory creation, or message writes.</td><td class="ok">Explicit and side-effect-free</td></tr>
+        <tr><td>TUI send failure</td><td>Localized status flash is shown; typed/editor text and insight marker remain; no refresh/success transition is scheduled.</td><td class="ok">Retryable</td></tr>
+        <tr><td>Historical remote records</td><td>Readers, parsers, topology/replay, and existing on-disk records remain readable.</td><td class="ok">Preserved</td></tr>
+      </tbody>
+    </table>
+  </article>
+
+  <article class="card">
+    <h2>Removed</h2>
+    <ul>
+      <li><code>lingtai-tui postman</code> dispatch, help, and main function.</li>
+      <li><code>tui/internal/postman</code>: runner, sender, receiver, wire codec, and tests.</li>
+      <li>Postman-exclusive <code>github.com/klauspost/compress</code> dependency.</li>
+      <li>Uncalled Portal mail writer/cache cluster and its dedicated tests.</li>
+      <li>Deprecated internal SQL-log alias <code>NotificationBlock</code>.</li>
+      <li>Live anatomy/skill claims that Postman remains part of the architecture.</li>
+    </ul>
+  </article>
+
+  <article class="card">
+    <h2>Intentionally retained</h2>
+    <ul>
+      <li>Local inbox/sent/archive/outbox formats and mailbox IDs.</li>
+      <li>Pseudo-agent polling and same-machine <code>peer</code>/<code>abs</code> delivery.</li>
+      <li>Address parsing, including localhost and IPv6 forms.</li>
+      <li>Portal inbox/archive readers, network topology, and replay.</li>
+      <li>TUI/Portal migration history and parity tests.</li>
+      <li>Existing user outboxes, history, PID files, and running processes.</li>
+    </ul>
+  </article>
+
+  <article class="card wide">
+    <h2>Validation receipts</h2>
+    <table>
+      <thead><tr><th>Gate</th><th>Result</th></tr></thead>
+      <tbody>
+        <tr><td><code>go test ./... -count=1</code> in <code>tui/</code></td><td class="ok">PASS (root + 13 internal packages)</td></tr>
+        <tr><td><code>go vet ./...</code> in <code>tui/</code></td><td class="ok">PASS</td></tr>
+        <tr><td>Remote MailModel ordinary + editor/pending regression</td><td class="ok">PASS</td></tr>
+        <tr><td>Existing inbox/sent/outbox sentinel-tree immutability test</td><td class="ok">PASS</td></tr>
+        <tr><td><code>go test ./internal/... -count=1</code> + <code>go vet ./internal/...</code> in <code>portal/</code></td><td class="ok">PASS</td></tr>
+        <tr><td>en/zh/wen JSON parse + exact key parity</td><td class="ok">PASS</td></tr>
+        <tr><td>Exact eight-file deletion manifest; Postman/zstd/alias/Portal-writer residual scans</td><td class="ok">PASS</td></tr>
+        <tr><td>Anatomy line landmarks + <code>git diff HEAD --check</code></td><td class="ok">PASS</td></tr>
+      </tbody>
+    </table>
+    <p class="note"><strong>Known harness limitation:</strong> repository-root Portal <code>go test ./...</code> requires generated <code>portal/web/dist</code> for <code>go:embed</code>; the clean worktree did not contain that generated artifact. All Portal internal packages affected by this PR passed independently.</p>
+  </article>
+
+  <article class="card">
+    <h2>Independent review</h2>
+    <p>Pool Terra reviewed the frozen candidate read-only. It confirmed the removal/dependency/Portal/alias boundaries and found one end-to-end defect: the TUI ignored <code>WriteMail</code> errors. The final candidate handles that error, preserves retry state and the insight marker, and adds focused coverage.</p>
+    <p>Terra also corrected platform-split wording and filesystem anatomy citations. The Portal mailbox ID generator remains intentionally retained under the compatibility boundary.</p>
+  </article>
+
+  <article class="card">
+    <h2>Non-goals and remaining risk</h2>
+    <ul>
+      <li>No migration, quarantine move, or deletion of existing outbox data.</li>
+      <li>No change to the kernel's filesystem mail contract.</li>
+      <li>No attempt to replace Postman with another network transport.</li>
+      <li>No changes to historical migration sources or old design plans.</li>
+    </ul>
+    <p class="warn">An existing remote outbox stays historical/inert. This PR prevents new remote queue creation but does not reinterpret or mutate old records.</p>
+  </article>
+
+  <article class="card wide sources">
+    <h2>Source map</h2>
+    <ul>
+      <li>tui/internal/fs/mail.go</li>
+      <li>tui/internal/fs/mail_test.go</li>
+      <li>tui/internal/tui/mail.go</li>
+      <li>tui/internal/tui/mail_remote_send_test.go</li>
+      <li>portal/internal/fs/mail.go</li>
+      <li>tui/main.go</li>
+      <li>tui/internal/sqlitelog/query.go</li>
+      <li>ANATOMY.md · tui/ANATOMY.md · tui/internal/fs/ANATOMY.md · portal/internal/fs/ANATOMY.md</li>
+    </ul>
+  </article>
+</section>
+</main></body></html>

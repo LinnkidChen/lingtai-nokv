@@ -37,7 +37,6 @@ Key packages in `tui/internal/`:
 | `fs/` | Filesystem read accessors into agent working directories |
 | `config/` | Global TUI config under `~/.lingtai-tui/` |
 | `process/` | Subprocess launcher for `python -m lingtai run <dir>` |
-| `postman/` | UDP/IPv6 cross-internet agent mesh |
 | `i18n/` | en/zh/wen JSON tables (three locales always) |
 
 Key packages in `portal/internal/`:

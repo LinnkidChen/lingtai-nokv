@@ -51,12 +51,6 @@ func (b NotificationSummaryEntry) Time() time.Time {
 	return time.Unix(sec, nsec).Local()
 }
 
-// NotificationBlock is a legacy alias for NotificationSummaryEntry retained
-// for callers that have not yet migrated to the renamed type.
-//
-// Deprecated: use NotificationSummaryEntry or NotificationBlockSnapshot.
-type NotificationBlock = NotificationSummaryEntry
-
 // summaryEntryFields holds the raw fields_json structure for notification_pair_injected.
 type summaryEntryFields struct {
 	CallID  string                 `json:"call_id"`

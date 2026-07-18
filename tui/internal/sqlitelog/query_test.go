@@ -256,7 +256,7 @@ func TestMissingDB(t *testing.T) {
 	}
 }
 
-// ── NotificationBlock tests ───────────────────────────────────────────────────
+// ── NotificationSummaryEntry tests ────────────────────────────────────────────
 
 func TestQueryNotificationBlocksEmpty(t *testing.T) {
 	agentDir := makeTestDB(t)
@@ -329,7 +329,7 @@ func TestParseNotificationBlockFieldsMeta(t *testing.T) {
 			}
 		}
 	}`
-	b := NotificationBlock{}
+	b := NotificationSummaryEntry{}
 	parseNotificationBlockFields(fieldsJSON, &b)
 
 	if b.CallID != "abc123" {
@@ -356,7 +356,7 @@ func TestParseNotificationBlockFieldsMeta(t *testing.T) {
 }
 
 func TestParseNotificationBlockFieldsInvalidJSON(t *testing.T) {
-	b := NotificationBlock{ID: 42}
+	b := NotificationSummaryEntry{ID: 42}
 	parseNotificationBlockFields("not-json", &b)
 	// Should not panic; identity fields unaffected
 	if b.ID != 42 {
@@ -378,7 +378,7 @@ func TestQueryNotificationBlocksMissingDB(t *testing.T) {
 }
 
 func TestNotificationBlockTime(t *testing.T) {
-	b := NotificationBlock{Ts: 1781577055.46409}
+	b := NotificationSummaryEntry{Ts: 1781577055.46409}
 	tt := b.Time()
 	if tt.Year() != 2026 {
 		t.Fatalf("unexpected year: %d", tt.Year())
